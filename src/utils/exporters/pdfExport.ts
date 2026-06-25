@@ -63,32 +63,46 @@ export async function buildSearchablePdf(
     const pg = pdfDoc.addPage([W, H])
     pg.drawImage(img, { x: 0, y: 0, width: W, height: H })
 
-    // NaturalReader対応（実験）：縦列の開始Yをページ共通の上端に揃える。
-    // 横書き前提のリーダーが「上端の揃った列群」を1ブロックと認識して全列を読むようにする。
-    // テキストは不可視なので見た目には影響しない。
-    let commonTopY: number | null = null
     if (naturalReaderMode) {
-      const tops = page.blocks
-        .filter(b => (b.text ?? '').trim() && isVerticalLine(b, orientation))
-        .map(b => H - b.y)
-      if (tops.length > 0) commonTopY = Math.max(...tops)
-    }
+      // NaturalReader対応（実験）：回転テキストを使わず、不可視テキストを
+      // 「横書き・読み順で上から下へスタック」して重ねる。
+      // 検証で、NaturalReader等の横書き前提リーダーは回転（縦書き）の孤立見出し列を
+      // 取りこぼすが、横書き読み順スタックなら見出し含め全文を正しい順で読むと判明。
+      // page.blocks は読み順に並んでいる前提。テキストは透明なので見た目には影響しない。
+      const lines = page.blocks
+        .map(b => (b.text ?? '').replace(/\s+$/g, ''))
+        .filter(t => t.length > 0)
+      const n = lines.length
+      if (n > 0) {
+        const margin = Math.max(20, H * 0.02)
+        const maxChars = Math.max(...lines.map(t => Array.from(t).length), 1)
+        // 横幅・縦高の両方に収まる文字サイズ（CJKは1文字≒1em幅で概算）
+        const fitW = ((W - margin * 2) / maxChars) * 0.95
+        const fitH = ((H - margin * 2) / n) * 0.8
+        const size = Math.max(6, Math.min(fitW, fitH))
+        const lineH = (H - margin * 2) / n
+        let y = H - margin - size
+        for (const text of lines) {
+          drawTextSafe(pg, font, text, margin, y, size, degrees(0), invisible)
+          y -= lineH
+        }
+      }
+    } else {
+      for (const block of page.blocks) {
+        const text = (block.text ?? '').replace(/\s+$/g, '')
+        if (!text) continue
+        const charCount = Array.from(text).length
 
-    for (const block of page.blocks) {
-      const text = (block.text ?? '').replace(/\s+$/g, '')
-      if (!text) continue
-      const charCount = Array.from(text).length
-
-      if (isVerticalLine(block, orientation)) {
-        // 縦書き：行全体を1テキストとして、列の位置に90°回転で配置（不可視）。
-        // 文字数で1文字サイズを見積もり、列内に収まるようにする。
-        const size = Math.max(6, Math.min(block.width, block.height / charCount))
-        const startY = commonTopY ?? (H - block.y)
-        drawTextSafe(pg, font, text, block.x + size * 0.9, startY, size, degrees(-90), invisible)
-      } else {
-        // 横書き：行をまとめて1回で配置。
-        const size = Math.max(6, block.height * 0.9)
-        drawTextSafe(pg, font, text, block.x, H - block.y - block.height + (block.height - size) / 2, size, degrees(0), invisible)
+        if (isVerticalLine(block, orientation)) {
+          // 縦書き：行全体を1テキストとして、列の位置に90°回転で配置（不可視）。
+          // 文字数で1文字サイズを見積もり、列内に収まるようにする。
+          const size = Math.max(6, Math.min(block.width, block.height / charCount))
+          drawTextSafe(pg, font, text, block.x + size * 0.9, H - block.y, size, degrees(-90), invisible)
+        } else {
+          // 横書き：行をまとめて1回で配置。
+          const size = Math.max(6, block.height * 0.9)
+          drawTextSafe(pg, font, text, block.x, H - block.y - block.height + (block.height - size) / 2, size, degrees(0), invisible)
+        }
       }
     }
   }

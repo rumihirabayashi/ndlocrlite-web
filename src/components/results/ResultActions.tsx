@@ -148,8 +148,8 @@ export function ResultActions({ results, currentResult, processedImages, orienta
             {naturalReaderMode && (
               <div className="selected-text-hint">
                 {lang === 'ja'
-                  ? '※横書き前提のリーダーで読み飛ばし（章タイトル・段落の先頭行など）を減らすため、不可視テキストの配置を調整します。Apple系（プレビュー/VoiceOver/iOS）で読む場合はオフが無難です。'
-                  : 'Adjusts the invisible text layout to reduce skipped lines in horizontal-text readers. Leave off for Apple PDFKit (Preview/VoiceOver/iOS).'}
+                  ? '※不可視テキストを「横書き・読み順」で重ねます。NaturalReader等の横書きリーダーが見出しを含め全文を正しい順で読み上げます。読み上げ中のハイライトは縦の文字ではなく上から下へ進みます。Apple系（プレビュー/VoiceOver/iOS）で読む場合はオフが無難です。'
+                  : 'Overlays the invisible text horizontally in reading order, so horizontal readers (e.g. NaturalReader) read everything—including headings—in the correct order. The reading highlight moves top-to-bottom rather than tracking the vertical glyphs. Leave off for Apple PDFKit (Preview/VoiceOver/iOS).'}
               </div>
             )}
           </>
