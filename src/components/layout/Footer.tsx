@@ -38,7 +38,7 @@ export function Footer({ lang, githubUrl = 'https://github.com/yuta1984/ndlocrli
               CC BY 4.0
             </a>
             ）を{' '}
-            <a href="https://rumihirabayashi.com/" target="_blank" rel="noopener noreferrer">
+            <a href="https://rumihirabayashi.com/" target="_blank" rel="noopener noreferrer" className="link-derivative">
               平林ルミ
             </a>
             が改変したものです。追加機能：透明テキスト付きPDF・ePub・見出し付きWordの書き出し、認識結果の校正編集、作業の一時保存。
@@ -54,7 +54,7 @@ export function Footer({ lang, githubUrl = 'https://github.com/yuta1984/ndlocrli
               CC BY 4.0
             </a>
             ) modified by{' '}
-            <a href="https://rumihirabayashi.com/" target="_blank" rel="noopener noreferrer">
+            <a href="https://rumihirabayashi.com/" target="_blank" rel="noopener noreferrer" className="link-derivative">
               Rumi Hirabayashi
             </a>
             . Added: searchable PDF / ePub / Word export, on-screen proofreading, and autosave.

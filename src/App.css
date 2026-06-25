@@ -17,7 +17,7 @@
 .selected-text-hint { font-size: 0.8rem; color: #888; margin: 4px 0 0; }
 
 /* 認識結果：行ごとの編集一覧 */
-.edit-hint { font-size: 0.8rem; color: #666; background: #eef5fa; padding: 6px 9px; border-radius: 5px; margin-bottom: 8px; }
+.edit-hint { font-size: 0.8rem; color: #666; background: #eaf5ec; padding: 6px 9px; border-radius: 5px; margin-bottom: 8px; }
 .line-editor { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
 .line-row { display: flex; }
 .line-edit {
@@ -57,7 +57,7 @@
   border: 1px solid #cfcfcf; border-radius: 4px; background: #f7f7f7;
   cursor: pointer; font-size: 11px; color: #555;
 }
-.line-move-btn:hover:not(:disabled) { background: #e3f2fd; border-color: #0b5d8f; color: #0b5d8f; }
+.line-move-btn:hover:not(:disabled) { background: #e6f4ea; border-color: #2e7d32; color: #2e7d32; }
 .line-move-btn:disabled { opacity: 0.3; cursor: default; }
 
 /* 自動検出された要確認箇所のフラグ */

@@ -113,7 +113,7 @@ export function ResultActions({ results, currentResult, processedImages, orienta
     <div className="result-actions">
       {/* コピー（クリップボード） */}
       <div className="result-actions-buttons">
-        <button className="btn btn-primary" onClick={handleCopy} disabled={!currentResult}>
+        <button className="btn btn-derivative" onClick={handleCopy} disabled={!currentResult}>
           {copied ? (lang === 'ja' ? 'コピーしました！' : 'Copied!') : (lang === 'ja' ? 'テキストをコピー' : 'Copy text')}
         </button>
       </div>
@@ -183,7 +183,7 @@ export function ResultActions({ results, currentResult, processedImages, orienta
           </>
         )}
 
-        <button className="btn btn-primary" onClick={handleExport} disabled={results.length === 0 || exporting}>
+        <button className="btn btn-derivative" onClick={handleExport} disabled={results.length === 0 || exporting}>
           {exporting
             ? (lang === 'ja' ? '作成中…' : 'Creating…')
             : (lang === 'ja' ? '書き出す' : 'Export')}

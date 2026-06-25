@@ -16,6 +16,7 @@ import { ResultActions } from './components/results/ResultActions'
 import { HistoryPanel } from './components/results/HistoryPanel'
 import { SettingsModal } from './components/settings/SettingsModal'
 import { imageDataToDataUrl } from './utils/imageLoader'
+import { countPageWarnings } from './utils/lineWarnings'
 import { getDraft, saveDraftText, saveDraftImages, clearDraft } from './utils/db'
 import type { ProcessedImage } from './types/ocr'
 import type { Orientation } from './utils/exporters/pdfExport'
@@ -193,6 +194,12 @@ export default function App() {
   useEffect(() => { setPendingImageIndex(0) }, [processedImages])
 
   const currentResult = sessionResults[selectedResultIndex] ?? null
+
+  // 各ページの要確認件数（サムネイル・ページ選択に⚠️マークを出すため）
+  const pageWarnCounts = useMemo(
+    () => sessionResults.map((r) => countPageWarnings(r)),
+    [sessionResults]
+  )
 
   const selectedPageBlockText = useMemo(() => {
     if (!selectedPageBlock || !currentResult) return null
@@ -543,17 +550,26 @@ export default function App() {
                   const result = sessionResults[i]
                   const isInProgress = !result && isProcessing && i === sessionResults.length
                   const isPending = !result && !isInProgress
+                  const warnCount = pageWarnCounts[i] || 0
+                  const warnTitle = warnCount > 0
+                    ? (lang === 'ja' ? `　要確認 ${warnCount} 件` : ` · ${warnCount} to review`)
+                    : ''
                   return (
                     <button
                       key={i}
                       className={`result-sidebar-item ${result && i === selectedResultIndex ? 'active' : ''} ${isPending || isInProgress ? 'sidebar-pending' : ''}`}
                       onClick={() => { if (result) { setSelectedResultIndex(i); setSelectedBlock(null) } }}
                       disabled={!result}
-                      title={img.pageIndex ? `${img.fileName} (p.${img.pageIndex})` : img.fileName}
+                      title={(img.pageIndex ? `${img.fileName} (p.${img.pageIndex})` : img.fileName) + warnTitle}
                     >
                       <div className="result-sidebar-thumb-wrap">
                         <img src={result ? result.imageDataUrl : img.thumbnailDataUrl} alt={img.fileName} />
                         {isInProgress && <div className="sidebar-item-spinner" />}
+                        {warnCount > 0 && (
+                          <span className="sidebar-warn-badge" title={warnTitle.trim()}>
+                            ⚠️{warnCount}
+                          </span>
+                        )}
                       </div>
                       <span className="result-sidebar-label">
                         {img.pageIndex ? `${img.fileName} (p.${img.pageIndex})` : img.fileName}
@@ -594,9 +610,11 @@ export default function App() {
                 >
                   {processedImages.map((img, i) => {
                     const label = img.pageIndex ? `${img.fileName} (p.${img.pageIndex})` : img.fileName
+                    const warnCount = pageWarnCounts[i] || 0
+                    const warnMark = warnCount > 0 ? `　⚠️${warnCount}` : ''
                     return (
                       <option key={i} value={i} disabled={i >= sessionResults.length}>
-                        {i + 1} / {processedImages.length}　{label}
+                        {i + 1} / {processedImages.length}　{label}{warnMark}
                       </option>
                     )
                   })}

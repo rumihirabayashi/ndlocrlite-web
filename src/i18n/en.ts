@@ -2,7 +2,7 @@ import type { Translations } from './ja'
 
 export const en: Translations = {
   app: {
-    title: 'Read-aloud OCR',
+    title: 'Read-Aloud OCR for PDF',
     subtitle: 'Turn scans into accessible PDF / ePub / Word (modified NDLOCR-Lite Web)',
   },
   upload: {
