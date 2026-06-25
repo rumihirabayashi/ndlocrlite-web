@@ -37,6 +37,7 @@ export interface OCRResult {
   processingTimeMs: number
   createdAt: number // Unix timestamp (ms)
   pageBlocks?: PageBlock[] // DEIMが検出した段・カラム境界
+  folio?: string // ノンブル（書籍の印刷ページ番号）。OCRで検出できた場合のみ。実験的・不確実
 }
 
 export interface ProcessedImage {

@@ -554,13 +554,16 @@ export default function App() {
                   const warnTitle = warnCount > 0
                     ? (lang === 'ja' ? `　要確認 ${warnCount} 件` : ` · ${warnCount} to review`)
                     : ''
+                  const folio = result?.folio
+                  const fileLabel = img.pageIndex ? `${img.fileName} (p.${img.pageIndex})` : img.fileName
+                  const folioTitle = folio ? (lang === 'ja' ? `　書籍ページ ${folio}` : ` · book p.${folio}`) : ''
                   return (
                     <button
                       key={i}
                       className={`result-sidebar-item ${result && i === selectedResultIndex ? 'active' : ''} ${isPending || isInProgress ? 'sidebar-pending' : ''}`}
                       onClick={() => { if (result) { setSelectedResultIndex(i); setSelectedBlock(null) } }}
                       disabled={!result}
-                      title={(img.pageIndex ? `${img.fileName} (p.${img.pageIndex})` : img.fileName) + warnTitle}
+                      title={`${i + 1}　${fileLabel}${folioTitle}${warnTitle}`}
                     >
                       <div className="result-sidebar-thumb-wrap">
                         <img src={result ? result.imageDataUrl : img.thumbnailDataUrl} alt={img.fileName} />
@@ -572,7 +575,12 @@ export default function App() {
                         )}
                       </div>
                       <span className="result-sidebar-label">
-                        {img.pageIndex ? `${img.fileName} (p.${img.pageIndex})` : img.fileName}
+                        <span className="sidebar-page-no">{i + 1}</span>
+                        {folio && (
+                          <span className="sidebar-folio" title={lang === 'ja' ? `書籍の印刷ページ番号（OCR推定）` : 'Printed book page (OCR estimate)'}>
+                            📖{folio}
+                          </span>
+                        )}
                       </span>
                     </button>
                   )
@@ -612,9 +620,11 @@ export default function App() {
                     const label = img.pageIndex ? `${img.fileName} (p.${img.pageIndex})` : img.fileName
                     const warnCount = pageWarnCounts[i] || 0
                     const warnMark = warnCount > 0 ? `　⚠️${warnCount}` : ''
+                    const folio = sessionResults[i]?.folio
+                    const folioMark = folio ? `　📖${folio}` : ''
                     return (
                       <option key={i} value={i} disabled={i >= sessionResults.length}>
-                        {i + 1} / {processedImages.length}　{label}{warnMark}
+                        {i + 1} / {processedImages.length}　{label}{folioMark}{warnMark}
                       </option>
                     )
                   })}

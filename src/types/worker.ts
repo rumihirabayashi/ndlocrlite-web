@@ -42,6 +42,7 @@ export type WorkerOutMessage =
       textBlocks: TextBlock[]
       txt: string
       processingTime: number
+      folio?: string // ノンブル（書籍ページ番号）。検出できた場合のみ
     }
   | {
       type: 'OCR_ERROR'

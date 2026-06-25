@@ -399,13 +399,26 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   border-radius: 3px;
 }
 .result-sidebar-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 4px;
   font-size: 0.65rem;
   color: var(--color-text-secondary);
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
   width: 100%;
   text-align: center;
+}
+.sidebar-page-no {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+.sidebar-folio {
+  font-size: 0.62rem;
+  color: #2e7d32;
+  font-weight: 600;
 }
 .result-sidebar-item.active .result-sidebar-label { color: var(--color-primary); }
 .result-sidebar-item.sidebar-pending { opacity: 0.45; cursor: default; }

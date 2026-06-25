@@ -18,7 +18,7 @@ import './onnx-config'
 import { loadModel } from './model-loader'
 import { LayoutDetector } from './layout-detector'
 import { TextRecognizer } from './text-recognizer'
-import { ReadingOrderProcessor, type Orientation } from './reading-order'
+import { ReadingOrderProcessor, extractFolio, type Orientation } from './reading-order'
 import type { TextBlock } from '../types/ocr'
 import type { WorkerInMessage, WorkerOutMessage } from '../types/worker'
 
@@ -223,8 +223,10 @@ class OCRWorker {
         message: 'Processing reading order...',
       })
 
+      // ノンブル（書籍ページ番号）を本文から分離（実験的）
+      const { rest, folio } = extractFolio(recognitionResults)
       // 読み順整序（組み方向を反映・引用早閉じ補正もこの中で実施）
-      const orderedResults = this.readingOrderProcessor.process(recognitionResults, pageBlocks, { orientation })
+      const orderedResults = this.readingOrderProcessor.process(rest, pageBlocks, { orientation })
 
       // Stage 4: 出力生成
       this.post({
@@ -246,6 +248,7 @@ class OCRWorker {
         textBlocks: orderedResults,
         txt,
         processingTime: Date.now() - startTime,
+        folio,
       })
     } catch (error) {
       this.post({

@@ -3,7 +3,7 @@ import type { OCRJobState, OCRResult, ProcessedImage, TextBlock, TextRegion, Pag
 import type { WorkerInMessage, WorkerOutMessage } from '../types/worker'
 import type { RecWorkerInMessage, RecWorkerOutMessage } from '../types/recognition-worker'
 import { imageDataToDataUrl } from '../utils/imageLoader'
-import { ReadingOrderProcessor, type Orientation } from '../worker/reading-order'
+import { ReadingOrderProcessor, extractFolio, type Orientation } from '../worker/reading-order'
 // ?worker import → Vite が recognition.worker.ts を独立バンドルして Worker コンストラクタを返す
 import RecognitionWorkerFactory from '../worker/recognition.worker.ts?worker'
 
@@ -150,6 +150,7 @@ export function useOCRWorker() {
               fullText: msg.txt,
               processingTimeMs: msg.processingTime,
               createdAt: Date.now(),
+              folio: msg.folio,
             })
           } else if (msg.type === 'LAYOUT_DONE') {
             workerRef.current?.removeEventListener('message', handler)
@@ -271,7 +272,9 @@ export function useOCRWorker() {
           message: 'Processing reading order...',
         }))
 
-        const orderedResults = readingOrderProcessor.process(recognitionResults, pageBlocks, { orientation })
+        // ノンブル（書籍ページ番号）を本文から分離してからreading-order（実験的）
+        const { rest, folio } = extractFolio(recognitionResults)
+        const orderedResults = readingOrderProcessor.process(rest, pageBlocks, { orientation })
         const txt = orderedResults.filter(b => b.text).map(b => b.text).join('\n')
 
         const result: OCRResult = {
@@ -283,6 +286,7 @@ export function useOCRWorker() {
           processingTimeMs: Date.now() - startTime,
           createdAt: Date.now(),
           pageBlocks,
+          folio,
         }
 
         setJobState((prev) => ({ ...prev, status: 'done', stageProgress: 1 }))

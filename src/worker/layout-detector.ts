@@ -18,6 +18,7 @@ import type { TextRegion, PageBlock, LayoutDetectionResult } from '../types/ocr'
 // ndl.yaml の line クラスID (0-indexed, class_index = label - 1)
 const LINE_CLASS_IDS = new Set([1, 2, 3, 4, 5, 16]) // line_main, line_caption, line_ad, line_note, line_note_tochu, line_title
 const BLOCK_CLASS_ID = 0 // text_block (段・カラム境界)
+const FOLIO_CLASS_ID = 9 // block_folio（ノンブル＝書籍の印刷ページ番号）。OCRして書籍ページ番号の推定に使う（実験的）
 
 interface PreprocessResult {
   tensor: OrtType.Tensor
@@ -202,8 +203,9 @@ export class LayoutDetector {
           if (width >= 10 && height >= 10) {
             blockDetections.push({ x: finalX1, y: finalY1, width, height })
           }
-        } else if (LINE_CLASS_IDS.has(classId)) {
-          // ライン: バウンディングボックスを上下2%拡張
+        } else if (LINE_CLASS_IDS.has(classId) || classId === FOLIO_CLASS_ID) {
+          // ライン（＋ノンブル）: バウンディングボックスを上下2%拡張してOCR対象に。
+          // ノンブル(classId=9)はここでOCRした後、reading-order前に本文から分離する
           const boxHeight = y2 - y1
           const deltaH = boxHeight * 0.02
           const finalX1 = Math.max(0, Math.round(x1))

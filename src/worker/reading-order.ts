@@ -33,6 +33,44 @@ function makeNode(x0: number, y0: number, x1: number, y1: number): XYNode {
 
 export type Orientation = 'auto' | 'vertical' | 'horizontal'
 
+// ノンブル（書籍の印刷ページ番号）のレイアウト分類ID（block_folio）
+const FOLIO_CLASS_ID = 9
+
+/**
+ * 認識済みブロックからノンブル(classId=9)を分離する（実験的・不確実）。
+ * - rest: ノンブルを除いた本文ブロック（reading-order に渡す）
+ * - folio: 検出できた書籍ページ番号の文字列（複数あれば最も確からしい1つ）。無ければ undefined
+ *
+ * ノンブルは本文・コピー・各種書き出しから除外したいので、reading-order の前に抜き出す。
+ */
+export function extractFolio(blocks: TextBlock[]): { rest: TextBlock[]; folio?: string } {
+  const folioBlocks = blocks.filter(b => b.classId === FOLIO_CLASS_ID)
+  const rest = blocks.filter(b => b.classId !== FOLIO_CLASS_ID)
+  if (folioBlocks.length === 0) return { rest }
+
+  // ページ番号らしさで候補を採点：算用数字 or 漢数字を含み、短い（記号やゴミを除く）ものを優先
+  const arabic = /[0-9０-９]+/
+  const kanjiNum = /[一二三四五六七八九十百〇零]/
+  const candidates = folioBlocks
+    .map(b => {
+      const raw = (b.text || '').trim()
+      // 「― 12 ―」「12頁」等から数字部分を抽出。なければ漢数字列をそのまま使う
+      const arabicMatch = raw.match(/[0-9０-９]+/)
+      let value = ''
+      if (arabicMatch) value = arabicMatch[0]
+      else if (kanjiNum.test(raw) && raw.length <= 6) value = raw.replace(/[^一二三四五六七八九十百〇零]/g, '')
+      const looksLikePage = !!value && (arabic.test(value) || kanjiNum.test(value))
+      return { value, confidence: b.confidence, looksLikePage }
+    })
+    .filter(c => c.looksLikePage)
+
+  if (candidates.length === 0) return { rest }
+  candidates.sort((a, b) => b.confidence - a.confidence)
+  // 全角数字は半角に正規化して表示を揃える
+  const folio = candidates[0].value.replace(/[０-９]/g, d => String('０１２３４５６７８９'.indexOf(d)))
+  return { rest, folio }
+}
+
 function countChar(s: string, c: string): number {
   let n = 0
   for (const ch of s) if (ch === c) n++
