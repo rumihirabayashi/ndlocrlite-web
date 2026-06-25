@@ -195,13 +195,14 @@ export class TextRecognizer {
         resultClassIds.push(maxIndex - 1)
       }
 
-      // 連続重複を除去してテキスト生成
+      // テキスト生成
+      // 注意：PARSeq（attention型・autoregressive）は各位置が1文字に対応し、
+      // CTCのような連続重複除去は不要。除去すると「民主主義」→「民主義」のように
+      // 正当な連続同一文字が欠落するため、ここでは重複除去を行わない。
       const resultChars: string[] = []
-      let prevId = -1
       for (const id of resultClassIds) {
-        if (id !== prevId && id < this.config.charList.length) {
+        if (id < this.config.charList.length) {
           resultChars.push(this.config.charList[id])
-          prevId = id
         }
       }
 

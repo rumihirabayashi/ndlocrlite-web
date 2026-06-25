@@ -22,6 +22,43 @@ import { ReadingOrderProcessor } from './reading-order'
 import type { TextBlock } from '../types/ocr'
 import type { WorkerInMessage, WorkerOutMessage } from '../types/worker'
 
+/** 文字数カウント */
+function countChar(s: string, c: string): number {
+  let n = 0
+  for (const ch of s) if (ch === c) n++
+  return n
+}
+
+/**
+ * 認識が「行末で開いた鉤括弧を早閉じして付けた余分な閉じ括弧」を除去する。
+ * 条件：行末が 」/』 で終わり、その閉じを外すと同じ行に未閉じの開き括弧が残り、
+ *       かつ後続行に（新たな開き括弧より先に）対応する閉じ括弧がある（＝引用が継続）。
+ * これにより「ゲー」ム」→「ゲーム」、「犠牲者は」共同体…除去される」→ 正しい1引用 に補正。
+ */
+function removeSpuriousLineEndQuotes(blocks: TextBlock[]): TextBlock[] {
+  const pairs: [string, string][] = [['「', '」'], ['『', '』']]
+  const out = blocks.map((b) => ({ ...b }))
+  for (let i = 0; i < out.length; i++) {
+    const t = out[i].text
+    if (!t) continue
+    const last = t[t.length - 1]
+    const pair = pairs.find((p) => p[1] === last)
+    if (!pair) continue
+    const [open, close] = pair
+    const body = t.slice(0, -1)
+    // 末尾の閉じを外すと、この行に未閉じの開き括弧が残るか
+    if (countChar(body, open) <= countChar(body, close)) continue
+    // 後続行：新たな開き括弧より先に閉じ括弧が来る＝引用が継続している
+    const ahead = out.slice(i + 1).map((b) => b.text).join('')
+    const fOpen = ahead.indexOf(open)
+    const fClose = ahead.indexOf(close)
+    if (fClose !== -1 && (fOpen === -1 || fClose < fOpen)) {
+      out[i].text = body // 余分な閉じ括弧を除去
+    }
+  }
+  return out
+}
+
 class OCRWorker {
   private layoutDetector: LayoutDetector | null = null
   private recognizer30: TextRecognizer | null = null  // ≤30文字 [1,3,16,256]
@@ -223,7 +260,9 @@ class OCRWorker {
         message: 'Processing reading order...',
       })
 
-      const orderedResults = this.readingOrderProcessor.process(recognitionResults, pageBlocks)
+      const ordered = this.readingOrderProcessor.process(recognitionResults, pageBlocks)
+      // 認識が行末で付けた余分な閉じ鉤括弧を補正
+      const orderedResults = removeSpuriousLineEndQuotes(ordered)
 
       // Stage 4: 出力生成
       this.post({

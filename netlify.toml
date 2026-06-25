@@ -8,6 +8,8 @@
   [headers.values]
     Cross-Origin-Opener-Policy = "same-origin"
     Cross-Origin-Embedder-Policy = "require-corp"
+    # 検索エンジンに載せない（URLを知る人だけがアクセスする非公開運用）
+    X-Robots-Tag = "noindex, nofollow"
 
 # SPAフォールバック
 [[redirects]]

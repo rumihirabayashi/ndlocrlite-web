@@ -7,6 +7,19 @@ import { buildDocx } from '../../utils/exporters/docxExport'
 
 type ExportFormat = 'txt' | 'pdf' | 'epub' | 'docx'
 
+// Word出力で選べるフォント。既定は「指定なし」＝各環境の標準日本語フォントで崩れを防ぐ。
+// 名前付きフォントは環境に無いと代替される（崩れではなく字体の置換）。
+const FONT_OPTIONS: { value: string; label: string }[] = [
+  { value: '', label: '標準（指定なし・どの環境でも安全）' },
+  { value: '游明朝', label: '游明朝（Mac/Windows）' },
+  { value: '游ゴシック', label: '游ゴシック（Mac/Windows）' },
+  { value: 'BIZ UDP明朝', label: 'BIZ UDP明朝（UD・Windows中心）' },
+  { value: 'BIZ UDPゴシック', label: 'BIZ UDPゴシック（UD・Windows中心）' },
+  { value: 'メイリオ', label: 'メイリオ（Windows）' },
+  { value: 'ヒラギノ明朝 ProN', label: 'ヒラギノ明朝（Mac）' },
+  { value: 'ヒラギノ角ゴシック', label: 'ヒラギノ角ゴシック（Mac）' },
+]
+
 interface ResultActionsProps {
   results: OCRResult[]
   currentResult: OCRResult | null
@@ -31,6 +44,8 @@ export function ResultActions({ results, currentResult, processedImages, lang }:
   const [orientation, setOrientation] = useState<Orientation>('auto')
   const [format, setFormat] = useState<ExportFormat>('pdf')
   const [txtCurrentOnly, setTxtCurrentOnly] = useState(false)
+  const [docxBodyFont, setDocxBodyFont] = useState('')      // 既定＝指定なし
+  const [docxHeadingFont, setDocxHeadingFont] = useState('') // 既定＝指定なし
   const [exporting, setExporting] = useState(false)
 
   const applyOptions = (text: string) =>
@@ -82,7 +97,7 @@ export function ResultActions({ results, currentResult, processedImages, lang }:
         downloadBlob(await buildEpub(pages, { title: baseName }), `${baseName}.epub`)
       } else {
         const pages = results.slice(0, n).map((r, i) => ({ fileName: r.fileName, pageLabel: pageLabel(i), blocks: r.textBlocks }))
-        downloadBlob(await buildDocx(pages, { title: baseName }), `${baseName}.docx`)
+        downloadBlob(await buildDocx(pages, { title: baseName, bodyFont: docxBodyFont, headingFont: docxHeadingFont }), `${baseName}.docx`)
       }
     } catch (e) {
       console.error('Export failed:', e)
@@ -146,6 +161,28 @@ export function ResultActions({ results, currentResult, processedImages, lang }:
                 {lang === 'ja' ? '現在のページのみ' : 'Current page only'}
               </label>
             )}
+          </>
+        )}
+
+        {format === 'docx' && (
+          <>
+            <label className="result-actions-option">
+              {lang === 'ja' ? '見出しフォント：' : 'Heading font: '}
+              <select value={docxHeadingFont} onChange={(e) => setDocxHeadingFont(e.target.value)}>
+                {FONT_OPTIONS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+              </select>
+            </label>
+            <label className="result-actions-option">
+              {lang === 'ja' ? '本文フォント：' : 'Body font: '}
+              <select value={docxBodyFont} onChange={(e) => setDocxBodyFont(e.target.value)}>
+                {FONT_OPTIONS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+              </select>
+            </label>
+            <div className="selected-text-hint">
+              {lang === 'ja'
+                ? '※「標準」はどの環境でも崩れません。フォント名を選ぶと、その書体が無い環境では自動で代替されます。'
+                : 'Standard is safe everywhere. Named fonts are substituted where unavailable.'}
+            </div>
           </>
         )}
 

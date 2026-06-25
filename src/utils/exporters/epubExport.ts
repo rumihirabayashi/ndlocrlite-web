@@ -21,7 +21,8 @@ const TITLE_CLASS_ID = 16
 const esc = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
-const endsSentence = (s: string) => /[。．！？!?」』）)]$/.test(s.trim())
+// 文末記号で区切る。閉じ括弧の後続は許容するが、閉じ括弧単独では区切らない。
+const endsSentence = (s: string) => /[。．！？!?][」』）)]*$/.test(s.trim())
 
 interface Chapter { title: string; paragraphs: string[]; fromHeading: boolean }
 

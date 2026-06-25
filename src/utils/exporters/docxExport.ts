@@ -19,18 +19,36 @@ const SKIP_CLASS_IDS = new Set([8, 9, 10])
 const TITLE_CLASS_ID = 16
 
 function endsSentence(s: string): boolean {
-  return /[。．！？!?」』）)]$/.test(s.trim())
+  // 文末記号（。．！？!?）で区切る。直後に閉じ括弧が続くのは許容（例：…だ。」）。
+  // ただし閉じ括弧「」』）)」単独では区切らない（文中の引用・括弧で改行されるのを防ぐ）。
+  return /[。．！？!?][」』）)]*$/.test(s.trim())
 }
+
+export interface DocxOptions {
+  title?: string
+  /** 本文フォント（例：游明朝）。空なら指定せず＝各環境の標準日本語フォント */
+  bodyFont?: string
+  /** 見出しフォント（例：游ゴシック）。空なら指定なし */
+  headingFont?: string
+}
+
+// フォント名が空なら font プロパティを付けない（＝環境の既定フォントで崩れを防ぐ）
+const fontProp = (f?: string) => (f ? { font: f } : {})
 
 export async function buildDocx(
   pages: DocxPage[],
-  options: { title?: string } = {}
+  options: DocxOptions = {}
 ): Promise<Blob> {
+  const bodyFont = options.bodyFont
+  const headingFont = options.headingFont
+
   const children: Paragraph[] = []
   if (options.title) {
-    children.push(new Paragraph({ text: options.title, heading: HeadingLevel.TITLE }))
+    children.push(new Paragraph({
+      heading: HeadingLevel.TITLE,
+      children: [new TextRun({ text: options.title, ...fontProp(headingFont) })],
+    }))
   }
-
 
   // 段落バッファはページを跨いで連結する（ページ境界で文を切らない）
   let para = ''
@@ -38,7 +56,7 @@ export async function buildDocx(
     // 本文段落は先頭1字下げ（firstLineChars:100 = 1文字分。フォントサイズに依存しない）
     if (para.trim()) {
       children.push(new Paragraph({
-        children: [new TextRun(para.trim())],
+        children: [new TextRun({ text: para.trim(), ...fontProp(bodyFont) })],
         indent: { firstLineChars: 100, firstLine: 200 },
       }))
     }
@@ -53,7 +71,10 @@ export async function buildDocx(
 
       if (b.classId === TITLE_CLASS_ID) {
         flush() // 見出しの前で段落を確定
-        children.push(new Paragraph({ text, heading: HeadingLevel.HEADING_1 }))
+        children.push(new Paragraph({
+          heading: HeadingLevel.HEADING_1,
+          children: [new TextRun({ text, ...fontProp(headingFont) })],
+        }))
         continue
       }
 

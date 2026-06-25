@@ -26,25 +26,6 @@ export function Footer({ lang, githubUrl = 'https://github.com/yuta1984/ndlocrli
           </span>
         )}
       </div>
-      <div className="footer-attribution">
-        {lang === 'ja' ? (
-          <span className="footer-attribution-text">
-            本ツールは国立国会図書館（NDL Lab）が開発した{' '}
-            <a href="https://github.com/ndl-lab/ndlocr-lite" target="_blank" rel="noopener noreferrer">
-              NDLOCR-Lite
-            </a>{' '}
-            のWebブラウザ版です。OCRモデルはNDLOCR-Liteのものを使用しています。
-          </span>
-        ) : (
-          <span className="footer-attribution-text">
-            This tool is a web browser port of{' '}
-            <a href="https://github.com/ndl-lab/ndlocr-lite" target="_blank" rel="noopener noreferrer">
-              NDLOCR-Lite
-            </a>{' '}
-            developed by the National Diet Library of Japan (NDL Lab). OCR models are from NDLOCR-Lite.
-          </span>
-        )}
-      </div>
       <div className="footer-derivative">
         {lang === 'ja' ? (
           <span className="footer-attribution-text">
@@ -80,11 +61,30 @@ export function Footer({ lang, githubUrl = 'https://github.com/yuta1984/ndlocrli
           </span>
         )}
       </div>
+      <div className="footer-attribution">
+        {lang === 'ja' ? (
+          <span className="footer-attribution-text">
+            OCRエンジンには、国立国会図書館（NDL Lab）が開発した{' '}
+            <a href="https://github.com/ndl-lab/ndlocr-lite" target="_blank" rel="noopener noreferrer">
+              NDLOCR-Lite
+            </a>{' '}
+            のモデルを使用しています。
+          </span>
+        ) : (
+          <span className="footer-attribution-text">
+            The OCR engine uses models from{' '}
+            <a href="https://github.com/ndl-lab/ndlocr-lite" target="_blank" rel="noopener noreferrer">
+              NDLOCR-Lite
+            </a>
+            , developed by the National Diet Library of Japan (NDL Lab).
+          </span>
+        )}
+      </div>
       <div className="footer-meta">
         <span className="footer-author">
           {lang === 'ja' ? (
             <>
-              作成者:{' '}
+              原作（NDLOCR-Lite Web）作成者:{' '}
               <a href="https://x.com/yuta1984" target="_blank" rel="noopener noreferrer">
                 橋本雄太
               </a>
@@ -92,7 +92,7 @@ export function Footer({ lang, githubUrl = 'https://github.com/yuta1984/ndlocrli
             </>
           ) : (
             <>
-              Created by{' '}
+              Original (NDLOCR-Lite Web) by{' '}
               <a href="https://x.com/yuta1984" target="_blank" rel="noopener noreferrer">
                 Yuta Hashimoto
               </a>
@@ -106,7 +106,7 @@ export function Footer({ lang, githubUrl = 'https://github.com/yuta1984/ndlocrli
           rel="noopener noreferrer"
           className="footer-github"
         >
-          {lang === 'ja' ? 'GitHubリポジトリ' : 'GitHub Repository'} ↗
+          {lang === 'ja' ? '原作のGitHubリポジトリ' : 'Original GitHub Repository'} ↗
         </a>
       </div>
     </footer>
