@@ -45,9 +45,10 @@ async function loadFontBytes(): Promise<ArrayBuffer> {
  */
 export async function buildSearchablePdf(
   pages: ExportPage[],
-  options: { orientation?: Orientation } = {}
+  options: { orientation?: Orientation; naturalReaderMode?: boolean } = {}
 ): Promise<Uint8Array> {
   const orientation = options.orientation ?? 'auto'
+  const naturalReaderMode = options.naturalReaderMode ?? false
   const pdfDoc = await PDFDocument.create()
   pdfDoc.registerFontkit(fontkit)
   const font = await pdfDoc.embedFont(await loadFontBytes(), { subset: true })
@@ -62,6 +63,17 @@ export async function buildSearchablePdf(
     const pg = pdfDoc.addPage([W, H])
     pg.drawImage(img, { x: 0, y: 0, width: W, height: H })
 
+    // NaturalReader対応（実験）：縦列の開始Yをページ共通の上端に揃える。
+    // 横書き前提のリーダーが「上端の揃った列群」を1ブロックと認識して全列を読むようにする。
+    // テキストは不可視なので見た目には影響しない。
+    let commonTopY: number | null = null
+    if (naturalReaderMode) {
+      const tops = page.blocks
+        .filter(b => (b.text ?? '').trim() && isVerticalLine(b, orientation))
+        .map(b => H - b.y)
+      if (tops.length > 0) commonTopY = Math.max(...tops)
+    }
+
     for (const block of page.blocks) {
       const text = (block.text ?? '').replace(/\s+$/g, '')
       if (!text) continue
@@ -71,7 +83,8 @@ export async function buildSearchablePdf(
         // 縦書き：行全体を1テキストとして、列の位置に90°回転で配置（不可視）。
         // 文字数で1文字サイズを見積もり、列内に収まるようにする。
         const size = Math.max(6, Math.min(block.width, block.height / charCount))
-        drawTextSafe(pg, font, text, block.x + size * 0.9, H - block.y, size, degrees(-90), invisible)
+        const startY = commonTopY ?? (H - block.y)
+        drawTextSafe(pg, font, text, block.x + size * 0.9, startY, size, degrees(-90), invisible)
       } else {
         // 横書き：行をまとめて1回で配置。
         const size = Math.max(6, block.height * 0.9)
