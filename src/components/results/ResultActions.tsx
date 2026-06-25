@@ -24,6 +24,7 @@ interface ResultActionsProps {
   results: OCRResult[]
   currentResult: OCRResult | null
   processedImages: ProcessedImage[]
+  orientation: Orientation
   lang: 'ja' | 'en'
 }
 
@@ -37,11 +38,10 @@ async function imageDataToPngBytes(imageData: ImageData): Promise<Uint8Array> {
   return new Uint8Array(await blob.arrayBuffer())
 }
 
-export function ResultActions({ results, currentResult, processedImages, lang }: ResultActionsProps) {
+export function ResultActions({ results, currentResult, processedImages, orientation, lang }: ResultActionsProps) {
   const [copied, setCopied] = useState(false)
   const [includeFileName, setIncludeFileName] = useState(false)
   const [ignoreNewlines, setIgnoreNewlines] = useState(false)
-  const [orientation, setOrientation] = useState<Orientation>('auto')
   const [format, setFormat] = useState<ExportFormat>('pdf')
   const [txtCurrentOnly, setTxtCurrentOnly] = useState(false)
   const [docxBodyFont, setDocxBodyFont] = useState('')      // 既定＝指定なし
@@ -134,14 +134,11 @@ export function ResultActions({ results, currentResult, processedImages, lang }:
         </label>
 
         {format === 'pdf' && (
-          <label className="result-actions-option">
-            {lang === 'ja' ? '組み方向：' : 'Writing mode: '}
-            <select value={orientation} onChange={(e) => setOrientation(e.target.value as Orientation)}>
-              <option value="auto">{lang === 'ja' ? '自動判定' : 'Auto'}</option>
-              <option value="vertical">{lang === 'ja' ? '縦書き' : 'Vertical'}</option>
-              <option value="horizontal">{lang === 'ja' ? '横書き' : 'Horizontal'}</option>
-            </select>
-          </label>
+          <div className="selected-text-hint">
+            {lang === 'ja'
+              ? `組み方向：${orientation === 'vertical' ? '縦書き' : orientation === 'horizontal' ? '横書き' : '自動判定'}（認識時の設定を使用）`
+              : `Writing mode: ${orientation} (set before recognition)`}
+          </div>
         )}
 
         {/* テキスト出力時のオプション */}

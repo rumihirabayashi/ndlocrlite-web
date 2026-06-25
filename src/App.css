@@ -48,3 +48,26 @@
   border-radius: 6px;
 }
 .footer-derivative a { color: #0b5d8f; }
+
+/* 行の並べ替えボタン（↑↓） */
+.line-row { align-items: stretch; gap: 4px; }
+.line-move { display: flex; flex-direction: column; gap: 2px; flex-shrink: 0; justify-content: center; }
+.line-move-btn {
+  width: 26px; height: 18px; line-height: 1; padding: 0;
+  border: 1px solid #cfcfcf; border-radius: 4px; background: #f7f7f7;
+  cursor: pointer; font-size: 11px; color: #555;
+}
+.line-move-btn:hover:not(:disabled) { background: #e3f2fd; border-color: #0b5d8f; color: #0b5d8f; }
+.line-move-btn:disabled { opacity: 0.3; cursor: default; }
+
+/* 自動検出された要確認箇所のフラグ */
+.warn-summary {
+  background: #fff4e5; border: 1px solid #f0a500; border-radius: 6px;
+  padding: 7px 10px; margin-bottom: 8px; font-size: 0.85rem; color: #8a5a00;
+}
+.line-warn-mark { flex-shrink: 0; align-self: center; font-size: 0.95rem; cursor: help; }
+.line-row.line-warn .line-edit { border-color: #f0a500; background: #fff9ef; }
+
+/* 認識前のコントロール（組み方向＋認識開始） */
+.pre-ocr-controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 0.5rem; }
+.pre-ocr-controls .btn-above-viewer { width: auto; margin-bottom: 0; flex: 1; min-width: 160px; }

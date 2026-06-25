@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import type { OCRResult, TextBlock, BoundingBox, PageBlock } from './types/ocr'
+import type { OCRResult, TextBlock, PageBlock } from './types/ocr'
 import type { DBRunEntry } from './types/db'
 import { useI18n } from './hooks/useI18n'
 import { useOCRWorker } from './hooks/useOCRWorker'
@@ -15,10 +15,10 @@ import { ResultPanel } from './components/results/ResultPanel'
 import { ResultActions } from './components/results/ResultActions'
 import { HistoryPanel } from './components/results/HistoryPanel'
 import { SettingsModal } from './components/settings/SettingsModal'
-import { RegionOCRDialog } from './components/viewer/RegionOCRDialog'
 import { imageDataToDataUrl } from './utils/imageLoader'
 import { getDraft, saveDraftText, saveDraftImages, clearDraft } from './utils/db'
 import type { ProcessedImage } from './types/ocr'
+import type { Orientation } from './utils/exporters/pdfExport'
 import './App.css'
 
 /** data URL → ImageData（一時保存の復元時にフル画像を復号） */
@@ -38,29 +38,10 @@ function dataUrlToImageData(dataUrl: string): Promise<ImageData> {
   })
 }
 
-function cropRegion(srcDataUrl: string, bbox: BoundingBox) {
-  return new Promise<{ previewDataUrl: string; imageData: ImageData }>((resolve) => {
-    const img = new Image()
-    img.onload = () => {
-      const w = Math.max(1, Math.round(bbox.width))
-      const h = Math.max(1, Math.round(bbox.height))
-      const canvas = document.createElement('canvas')
-      canvas.width = w
-      canvas.height = h
-      const ctx = canvas.getContext('2d')!
-      ctx.drawImage(img, bbox.x, bbox.y, bbox.width, bbox.height, 0, 0, w, h)
-      resolve({
-        previewDataUrl: canvas.toDataURL('image/jpeg', 0.9),
-        imageData: ctx.getImageData(0, 0, w, h),
-      })
-    }
-    img.src = srcDataUrl
-  })
-}
 
 export default function App() {
   const { lang, toggleLanguage } = useI18n()
-  const { isReady, jobState, processImage, processRegion, resetState } = useOCRWorker()
+  const { isReady, jobState, processImage, resetState } = useOCRWorker()
   const { processedImages, isLoading: isLoadingFiles, processFiles, clearImages, fileLoadingState, restoreImages } = useFileProcessor()
   const { runs: historyRuns, saveRun, clearResults } = useResultCache()
 
@@ -73,6 +54,8 @@ export default function App() {
   const [isProcessing, setIsProcessing] = useState(false)
   const [isReadyToProcess, setIsReadyToProcess] = useState(false)
   const [pendingImageIndex, setPendingImageIndex] = useState(0)
+  // 組み方向（認識の読み順とPDF書き出しの両方に反映）
+  const [orientation, setOrientation] = useState<Orientation>('auto')
 
   // 画像パネルとテキストパネルの幅調整（仕切りドラッグ）
   const resultMainRef = useRef<HTMLDivElement>(null)
@@ -208,11 +191,6 @@ export default function App() {
 
   // processedImages が差し替わったらインデックスをリセット
   useEffect(() => { setPendingImageIndex(0) }, [processedImages])
-  const [regionOCRDialog, setRegionOCRDialog] = useState<{
-    cropDataUrl: string
-    isProcessing: boolean
-    result: { textBlocks: TextBlock[]; fullText: string } | null
-  } | null>(null)
 
   const currentResult = sessionResults[selectedResultIndex] ?? null
 
@@ -298,7 +276,7 @@ export default function App() {
       for (let i = 0; i < processedImages.length; i++) {
         const image = processedImages[i]
         try {
-          const result = await processImage(image, i, processedImages.length)
+          const result = await processImage(image, i, processedImages.length, orientation)
           successItems.push({ result, thumbnailDataUrl: image.thumbnailDataUrl })
           sessionResultsAccum.push(result)
           setSessionResults([...sessionResultsAccum])
@@ -346,18 +324,6 @@ export default function App() {
     clearDraft().catch(() => {})
   }
 
-  // 領域 OCR の共通ハンドラ（pending・result 両方から呼ぶ）
-  const handleRegionOCR = useCallback(async (blocks: TextBlock[], bbox: BoundingBox, srcDataUrl: string) => {
-    if (blocks.length > 0) setSelectedBlock(blocks[0])
-    const { previewDataUrl, imageData } = await cropRegion(srcDataUrl, bbox)
-    setRegionOCRDialog({ cropDataUrl: previewDataUrl, isProcessing: true, result: null })
-    try {
-      const result = await processRegion(imageData)
-      setRegionOCRDialog(prev => prev ? { ...prev, isProcessing: false, result } : null)
-    } catch {
-      setRegionOCRDialog(prev => prev ? { ...prev, isProcessing: false, result: { textBlocks: [], fullText: '' } } : null)
-    }
-  }, [processRegion])
 
   // 認識テキストの手修正：選択中ページの該当ブロックを書き換え、fullText を再構成
   // （textBlocks を更新するので、透明テキストPDF・ePub・Word・コピーすべてに反映される）
@@ -373,6 +339,28 @@ export default function App() {
     setSelectedBlock(prev =>
       prev && prev.readingOrder === target.readingOrder ? { ...prev, text: newText } : prev
     )
+  }, [selectedResultIndex])
+
+  // 認識行の読み順を入れ替え（↑↓）。隣の行と readingOrder を交換し、fullText を再構成。
+  // textBlocks を更新するので PDF・ePub・Word・コピーすべてに反映される。
+  const handleMoveBlock = useCallback((target: TextBlock, dir: 'up' | 'down') => {
+    setSessionResults(prev => prev.map((r, i) => {
+      if (i !== selectedResultIndex) return r
+      const sorted = [...r.textBlocks].sort((a, b) => a.readingOrder - b.readingOrder)
+      const idx = sorted.findIndex(b => b.readingOrder === target.readingOrder)
+      const swapIdx = dir === 'up' ? idx - 1 : idx + 1
+      if (idx < 0 || swapIdx < 0 || swapIdx >= sorted.length) return r
+      const aOrder = sorted[idx].readingOrder
+      const bOrder = sorted[swapIdx].readingOrder
+      const textBlocks = r.textBlocks.map(blk =>
+        blk.readingOrder === aOrder ? { ...blk, readingOrder: bOrder }
+          : blk.readingOrder === bOrder ? { ...blk, readingOrder: aOrder }
+          : blk
+      )
+      const fullText = [...textBlocks].sort((x, y) => x.readingOrder - y.readingOrder)
+        .filter(b => b.text).map(b => b.text).join('\n')
+      return { ...r, textBlocks, fullText }
+    }))
   }, [selectedResultIndex])
 
   const handleHistorySelect = (run: DBRunEntry) => {
@@ -494,23 +482,25 @@ export default function App() {
 
               <div className="result-main">
                 <div className="result-left">
-                  <button className="btn btn-primary btn-above-viewer" onClick={() => setIsReadyToProcess(true)}>
-                    {lang === 'ja' ? '認識を開始' : 'Start Recognition'}
-                  </button>
+                  <div className="pre-ocr-controls">
+                    <label className="result-actions-option">
+                      {lang === 'ja' ? '組み方向：' : 'Writing mode: '}
+                      <select value={orientation} onChange={(e) => setOrientation(e.target.value as Orientation)}>
+                        <option value="auto">{lang === 'ja' ? '自動判定' : 'Auto'}</option>
+                        <option value="vertical">{lang === 'ja' ? '縦書き' : 'Vertical'}</option>
+                        <option value="horizontal">{lang === 'ja' ? '横書き' : 'Horizontal'}</option>
+                      </select>
+                    </label>
+                    <button className="btn btn-primary btn-above-viewer" onClick={() => setIsReadyToProcess(true)}>
+                      {lang === 'ja' ? '認識を開始' : 'Start Recognition'}
+                    </button>
+                  </div>
                   <ImageViewer
                     imageDataUrl={pendingDataUrls[pendingImageIndex] ?? ''}
                     textBlocks={[]}
                     selectedBlock={null}
                     onBlockSelect={() => {}}
-                    onRegionSelect={(blocks, bbox) =>
-                      handleRegionOCR(blocks, bbox, pendingDataUrls[pendingImageIndex] ?? '')
-                    }
                   />
-                  <p className="region-select-hint">
-                    {lang === 'ja'
-                      ? 'マウスで領域をドラッグすると、その領域のみ認識をおこないます'
-                      : 'Drag to select a region and run OCR on that area only'}
-                  </p>
                 </div>
               </div>
             </div>
@@ -638,21 +628,11 @@ export default function App() {
                       textBlocks={currentResult.textBlocks}
                       selectedBlock={selectedBlock}
                       onBlockSelect={(block) => { setSelectedBlock(block); setSelectedPageBlock(null) }}
-                      onRegionSelect={(blocks, bbox) =>
-                        currentResult
-                          ? handleRegionOCR(blocks, bbox, currentResult.imageDataUrl)
-                          : undefined
-                      }
                       pageBlocks={currentResult.pageBlocks}
                       selectedPageBlock={selectedPageBlock}
                       onPageBlockSelect={(block) => { setSelectedPageBlock(block); setSelectedBlock(null) }}
                     />
                   )}
-                  <p className="region-select-hint">
-                    {lang === 'ja'
-                      ? 'マウスで領域をドラッグすると、その領域のみ認識をおこないます'
-                      : 'Drag to select a region and run OCR on that area only'}
-                  </p>
                 </div>
 
                 <div
@@ -664,8 +644,8 @@ export default function App() {
                 />
 
                 <div className="result-right">
-                  <ResultPanel result={currentResult} selectedBlock={selectedBlock} selectedPageBlockText={selectedPageBlockText} onEditBlock={handleEditBlock} lang={lang} />
-                  <ResultActions results={sessionResults} currentResult={currentResult} processedImages={processedImages} lang={lang} />
+                  <ResultPanel result={currentResult} selectedBlock={selectedBlock} selectedPageBlockText={selectedPageBlockText} onEditBlock={handleEditBlock} onMoveBlock={handleMoveBlock} lang={lang} />
+                  <ResultActions results={sessionResults} currentResult={currentResult} processedImages={processedImages} orientation={orientation} lang={lang} />
                 </div>
               </div>
 
@@ -687,15 +667,6 @@ export default function App() {
       )}
       {showSettings && (
         <SettingsModal onClose={() => setShowSettings(false)} lang={lang} />
-      )}
-      {regionOCRDialog && (
-        <RegionOCRDialog
-          cropDataUrl={regionOCRDialog.cropDataUrl}
-          isProcessing={regionOCRDialog.isProcessing}
-          result={regionOCRDialog.result}
-          lang={lang}
-          onClose={() => setRegionOCRDialog(null)}
-        />
       )}
     </div>
   )

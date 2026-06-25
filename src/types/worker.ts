@@ -1,4 +1,5 @@
 import type { TextBlock, TextRegion, PageBlock } from './ocr'
+import type { Orientation } from '../worker/reading-order'
 
 // Workerへ送信するメッセージ
 export type WorkerInMessage =
@@ -8,6 +9,7 @@ export type WorkerInMessage =
       id: string
       imageData: ImageData
       startTime: number
+      orientation?: Orientation
     }
   | {
       type: 'LAYOUT_DETECT'

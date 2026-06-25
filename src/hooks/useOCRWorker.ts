@@ -3,7 +3,7 @@ import type { OCRJobState, OCRResult, ProcessedImage, TextBlock, TextRegion, Pag
 import type { WorkerInMessage, WorkerOutMessage } from '../types/worker'
 import type { RecWorkerInMessage, RecWorkerOutMessage } from '../types/recognition-worker'
 import { imageDataToDataUrl } from '../utils/imageLoader'
-import { ReadingOrderProcessor } from '../worker/reading-order'
+import { ReadingOrderProcessor, type Orientation } from '../worker/reading-order'
 // ?worker import → Vite が recognition.worker.ts を独立バンドルして Worker コンストラクタを返す
 import RecognitionWorkerFactory from '../worker/recognition.worker.ts?worker'
 
@@ -103,7 +103,7 @@ export function useOCRWorker() {
    * imageData は参照を保持したいため Transferable を使わずに structured clone で送信。
    */
   const processImage = useCallback(
-    (image: ProcessedImage, fileIndex: number, totalFiles: number): Promise<OCRResult> => {
+    (image: ProcessedImage, fileIndex: number, totalFiles: number, orientation: Orientation = 'auto'): Promise<OCRResult> => {
       return new Promise((resolve, reject) => {
         if (!workerRef.current) {
           reject(new Error('Worker not initialized'))
@@ -153,7 +153,7 @@ export function useOCRWorker() {
             })
           } else if (msg.type === 'LAYOUT_DONE') {
             workerRef.current?.removeEventListener('message', handler)
-            runRecognition(id, imageDataUrl, image, msg.textRegions, msg.croppedImages, msg.pageBlocks, msg.startTime, resolve, reject)
+            runRecognition(id, imageDataUrl, image, msg.textRegions, msg.croppedImages, msg.pageBlocks, msg.startTime, orientation, resolve, reject)
           } else if (msg.type === 'OCR_ERROR') {
             workerRef.current?.removeEventListener('message', handler)
             setJobState((prev) => ({
@@ -174,6 +174,7 @@ export function useOCRWorker() {
             id,
             imageData: image.imageData,
             startTime: Date.now(),
+            orientation,
           } satisfies WorkerInMessage)
         } else {
           // デスクトップ: LAYOUT_DETECT → 並列 recognition workers
@@ -199,6 +200,7 @@ export function useOCRWorker() {
     croppedImages: ImageData[],
     pageBlocks: PageBlock[],
     startTime: number,
+    orientation: Orientation,
     resolve: (result: OCRResult) => void,
     reject: (error: Error) => void
   ) => {
@@ -269,7 +271,7 @@ export function useOCRWorker() {
           message: 'Processing reading order...',
         }))
 
-        const orderedResults = readingOrderProcessor.process(recognitionResults, pageBlocks)
+        const orderedResults = readingOrderProcessor.process(recognitionResults, pageBlocks, { orientation })
         const txt = orderedResults.filter(b => b.text).map(b => b.text).join('\n')
 
         const result: OCRResult = {

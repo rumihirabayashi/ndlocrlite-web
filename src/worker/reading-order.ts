@@ -31,30 +31,76 @@ function makeNode(x0: number, y0: number, x1: number, y1: number): XYNode {
   return { x0, y0, x1, y1, children: [], lineIndices: [], numLines: 0, numVerticalLines: 0, isXSplit: false }
 }
 
+export type Orientation = 'auto' | 'vertical' | 'horizontal'
+
+function countChar(s: string, c: string): number {
+  let n = 0
+  for (const ch of s) if (ch === c) n++
+  return n
+}
+
+/**
+ * 認識が「行末で開いた鉤括弧を早閉じして付けた余分な閉じ括弧」を除去する。
+ * 行末が 」/』 で終わり、その閉じを外すと同じ行に未閉じの開きが残り、かつ後続行に
+ * （新たな開きより先に）対応する閉じがある（＝引用が継続）場合に除去。
+ * 例：「ゲー」ム」→「ゲーム」、「犠牲者は」共同体…除去される」→ 正しい1引用。
+ * 読み順整序後（＝行が読み順に並んだ状態）に適用すること。
+ */
+function removeSpuriousLineEndQuotes(blocks: TextBlock[]): TextBlock[] {
+  const pairs: [string, string][] = [['「', '」'], ['『', '』']]
+  const out = blocks.map((b) => ({ ...b }))
+  for (let i = 0; i < out.length; i++) {
+    const t = out[i].text
+    if (!t) continue
+    const last = t[t.length - 1]
+    const pair = pairs.find((p) => p[1] === last)
+    if (!pair) continue
+    const [open, close] = pair
+    const body = t.slice(0, -1)
+    if (countChar(body, open) <= countChar(body, close)) continue
+    const ahead = out.slice(i + 1).map((b) => b.text).join('')
+    const fOpen = ahead.indexOf(open)
+    const fClose = ahead.indexOf(close)
+    if (fClose !== -1 && (fOpen === -1 || fClose < fOpen)) {
+      out[i].text = body
+    }
+  }
+  return out
+}
+
 export class ReadingOrderProcessor {
   // 正規化グリッドサイズ（参照実装の get_optimal_grid に対応）
   private readonly GRID = 100
+  // 組み方向の強制指定（null=自動判定）。process() 実行中のみ有効
+  private forcedVertical: boolean | null = null
 
   /**
    * 公開 API
    * blocks が渡された場合はブロック割り当て優先、なければ XY-Cut にフォールバック
+   * options.orientation で組み方向を強制（縦/横）。指定時は読み順の列順を固定。
    */
-  process(textBlocks: TextBlock[], blocks?: PageBlock[], options: { minConfidence?: number } = {}): TextBlock[] {
+  process(
+    textBlocks: TextBlock[],
+    blocks?: PageBlock[],
+    options: { minConfidence?: number; orientation?: Orientation } = {}
+  ): TextBlock[] {
+    const { minConfidence = 0.1, orientation = 'auto' } = options
+    this.forcedVertical = orientation === 'vertical' ? true : orientation === 'horizontal' ? false : null
+
     if (!textBlocks || textBlocks.length === 0) return []
-    const { minConfidence = 0.1 } = options
 
     const validBlocks = textBlocks.filter(
       b => b.confidence >= minConfidence && b.text && b.text.trim().length > 0
     )
     if (validBlocks.length === 0) return []
     if (validBlocks.length === 1) {
-      return [{ ...validBlocks[0], readingOrder: 1 }]
+      return removeSpuriousLineEndQuotes([{ ...validBlocks[0], readingOrder: 1 }])
     }
 
-    if (blocks && blocks.length > 0) {
-      return this.processWithBlocks(validBlocks, blocks)
-    }
-    return this.processXYCut(validBlocks)
+    const ordered = (blocks && blocks.length > 0)
+      ? this.processWithBlocks(validBlocks, blocks)
+      : this.processXYCut(validBlocks)
+    return removeSpuriousLineEndQuotes(ordered)
   }
 
   /**
@@ -379,8 +425,9 @@ export class ReadingOrderProcessor {
     return [node.numLines, node.numVerticalLines]
   }
 
-  // 縦書き判定: 縦長ブロックが過半数
+  // 縦書き判定: 組み方向が指定されていればそれに従い、なければ縦長ブロックが過半数
   private isVertical(node: XYNode): boolean {
+    if (this.forcedVertical !== null) return this.forcedVertical
     return node.numLines < node.numVerticalLines * 2
   }
 
