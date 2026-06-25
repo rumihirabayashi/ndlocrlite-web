@@ -45,6 +45,41 @@ export function Footer({ lang, githubUrl = 'https://github.com/yuta1984/ndlocrli
           </span>
         )}
       </div>
+      <div className="footer-derivative">
+        {lang === 'ja' ? (
+          <span className="footer-attribution-text">
+            本ツールは{' '}
+            <a href="https://github.com/yuta1984/ndlocrlite-web" target="_blank" rel="noopener noreferrer">
+              NDLOCR-Lite Web
+            </a>
+            （橋本雄太氏・{' '}
+            <a href="https://creativecommons.org/licenses/by/4.0/deed.ja" target="_blank" rel="noopener noreferrer">
+              CC BY 4.0
+            </a>
+            ）を{' '}
+            <a href="https://rumihirabayashi.com/" target="_blank" rel="noopener noreferrer">
+              平林ルミ
+            </a>
+            が改変したものです。追加機能：透明テキスト付きPDF・ePub・見出し付きWordの書き出し、認識結果の校正編集、作業の一時保存。
+          </span>
+        ) : (
+          <span className="footer-attribution-text">
+            A modified version of{' '}
+            <a href="https://github.com/yuta1984/ndlocrlite-web" target="_blank" rel="noopener noreferrer">
+              NDLOCR-Lite Web
+            </a>
+            {' '}(by Yuta Hashimoto,{' '}
+            <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">
+              CC BY 4.0
+            </a>
+            ) modified by{' '}
+            <a href="https://rumihirabayashi.com/" target="_blank" rel="noopener noreferrer">
+              Rumi Hirabayashi
+            </a>
+            . Added: searchable PDF / ePub / Word export, on-screen proofreading, and autosave.
+          </span>
+        )}
+      </div>
       <div className="footer-meta">
         <span className="footer-author">
           {lang === 'ja' ? (

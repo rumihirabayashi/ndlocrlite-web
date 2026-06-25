@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import type { OCRResult, TextBlock, BoundingBox, PageBlock } from './types/ocr'
 import type { DBRunEntry } from './types/db'
 import { useI18n } from './hooks/useI18n'
@@ -17,7 +17,26 @@ import { HistoryPanel } from './components/results/HistoryPanel'
 import { SettingsModal } from './components/settings/SettingsModal'
 import { RegionOCRDialog } from './components/viewer/RegionOCRDialog'
 import { imageDataToDataUrl } from './utils/imageLoader'
+import { getDraft, saveDraftText, saveDraftImages, clearDraft } from './utils/db'
+import type { ProcessedImage } from './types/ocr'
 import './App.css'
+
+/** data URL → ImageData（一時保存の復元時にフル画像を復号） */
+function dataUrlToImageData(dataUrl: string): Promise<ImageData> {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => {
+      const c = document.createElement('canvas')
+      c.width = img.naturalWidth
+      c.height = img.naturalHeight
+      const ctx = c.getContext('2d')!
+      ctx.drawImage(img, 0, 0)
+      resolve(ctx.getImageData(0, 0, c.width, c.height))
+    }
+    img.onerror = reject
+    img.src = dataUrl
+  })
+}
 
 function cropRegion(srcDataUrl: string, bbox: BoundingBox) {
   return new Promise<{ previewDataUrl: string; imageData: ImageData }>((resolve) => {
@@ -42,7 +61,7 @@ function cropRegion(srcDataUrl: string, bbox: BoundingBox) {
 export default function App() {
   const { lang, toggleLanguage } = useI18n()
   const { isReady, jobState, processImage, processRegion, resetState } = useOCRWorker()
-  const { processedImages, isLoading: isLoadingFiles, processFiles, clearImages, fileLoadingState } = useFileProcessor()
+  const { processedImages, isLoading: isLoadingFiles, processFiles, clearImages, fileLoadingState, restoreImages } = useFileProcessor()
   const { runs: historyRuns, saveRun, clearResults } = useResultCache()
 
   const [sessionResults, setSessionResults] = useState<OCRResult[]>([])
@@ -55,11 +74,137 @@ export default function App() {
   const [isReadyToProcess, setIsReadyToProcess] = useState(false)
   const [pendingImageIndex, setPendingImageIndex] = useState(0)
 
+  // 画像パネルとテキストパネルの幅調整（仕切りドラッグ）
+  const resultMainRef = useRef<HTMLDivElement>(null)
+  const userResizedRef = useRef(false) // ユーザーが手動で幅を変えたか（変えたら自動調整しない）
+  const [rightWidth, setRightWidth] = useState(480)
+  const [isDraggingDivider, setIsDraggingDivider] = useState(false)
+  const startDividerDrag = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    const container = resultMainRef.current
+    if (!container) return
+    userResizedRef.current = true
+    setIsDraggingDivider(true)
+    const onMove = (ev: MouseEvent) => {
+      const rect = container.getBoundingClientRect()
+      const w = Math.max(280, Math.min(rect.width - 320, rect.right - ev.clientX))
+      setRightWidth(w)
+    }
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+      setIsDraggingDivider(false)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+  }, [])
+
+  // 一時保存（校正中の作業の自動保存・復元）
+  const [currentRunId, setCurrentRunId] = useState<string | null>(null)
+  const [draftToRestore, setDraftToRestore] = useState<DBRunEntry | null>(null)
+  const fullUrlCacheRef = useRef<Map<number, string>>(new Map())
+  const draftTimerRef = useRef<number | null>(null)
+  const savedImagesRunRef = useRef<string | null>(null) // 画像を保存済みの runId（実行ごとに1回だけ保存）
+
   // pending 状態での ImageViewer 表示用（全解像度 DataUrl）
   const pendingDataUrls = useMemo(
     () => processedImages.map((img) => imageDataToDataUrl(img.imageData)),
     [processedImages]
   )
+
+  // 結果表示時、ユーザーが未調整なら画像とテキストをほぼ半々の幅に初期化（画像が読みやすい）
+  useEffect(() => {
+    if (sessionResults.length === 0 || userResizedRef.current) return
+    const el = resultMainRef.current
+    if (!el) return
+    const total = el.clientWidth
+    if (total > 0) setRightWidth(Math.round((total - 10) * 3 / 5)) // 左2:右3
+  }, [sessionResults.length])
+
+  // 起動時：前回の校正作業（ドラフト）があれば復元バナーを出す
+  useEffect(() => {
+    getDraft().then((d) => {
+      if (d && d.files && d.files.length > 0) setDraftToRestore(d)
+    }).catch(() => {})
+  }, [])
+
+  // フル画像のdataURLはOCR後不変なのでキャッシュ（編集のたびに再エンコードしない）
+  useEffect(() => { fullUrlCacheRef.current = new Map() }, [processedImages])
+  const getFullUrl = useCallback((i: number, img: ProcessedImage): string => {
+    const cached = fullUrlCacheRef.current.get(i)
+    if (cached) return cached
+    const url = imageDataToDataUrl(img.imageData)
+    fullUrlCacheRef.current.set(i, url)
+    return url
+  }, [])
+
+  // 校正内容を自動で一時保存（編集のたびにデバウンス保存）
+  // 最適化：フル画像は実行ごとに1回だけ保存し、以降の保存はテキストのみ更新。
+  useEffect(() => {
+    if (isProcessing || sessionResults.length === 0 || !currentRunId) return
+    if (draftTimerRef.current) window.clearTimeout(draftTimerRef.current)
+    const runId = currentRunId
+    draftTimerRef.current = window.setTimeout(async () => {
+      const n = Math.min(sessionResults.length, processedImages.length)
+
+      // 画像はこの runId でまだ保存していなければ1回だけ保存
+      if (savedImagesRunRef.current !== runId) {
+        const urls = Array.from({ length: n }, (_, i) => getFullUrl(i, processedImages[i]))
+        await saveDraftImages(runId, urls).catch(() => {})
+        savedImagesRunRef.current = runId
+      }
+
+      // テキスト側は毎回更新（軽量）
+      const files = sessionResults.slice(0, n).map((r, i) => ({
+        fileName: r.fileName,
+        imageDataUrl: r.imageDataUrl,
+        pageIndex: processedImages[i].pageIndex,
+        textBlocks: r.textBlocks,
+        fullText: r.fullText,
+        processingTimeMs: r.processingTimeMs,
+      }))
+      await saveDraftText({ id: runId, files, createdAt: Date.now() }).catch(() => {})
+    }, 800)
+    return () => { if (draftTimerRef.current) window.clearTimeout(draftTimerRef.current) }
+  }, [sessionResults, isProcessing, currentRunId, processedImages, getFullUrl])
+
+  // ドラフトから作業を復元（フル画像を復号して processedImages も再構築）
+  const handleRestoreDraft = useCallback(async () => {
+    const d = draftToRestore
+    if (!d) return
+    const imgs: ProcessedImage[] = []
+    const results: OCRResult[] = []
+    for (let i = 0; i < d.files.length; i++) {
+      const f = d.files[i]
+      const src = f.imageFullDataUrl ?? f.imageDataUrl
+      const imageData = await dataUrlToImageData(src)
+      imgs.push({ fileName: f.fileName, pageIndex: f.pageIndex, imageData, thumbnailDataUrl: f.imageDataUrl })
+      results.push({
+        id: `${d.id}-${i}`,
+        fileName: f.fileName,
+        imageDataUrl: f.imageDataUrl,
+        textBlocks: f.textBlocks,
+        fullText: f.fullText,
+        processingTimeMs: f.processingTimeMs,
+        createdAt: d.createdAt,
+      })
+    }
+    restoreImages(imgs)
+    setSessionResults(results)
+    setSelectedResultIndex(0)
+    setCurrentRunId(d.id)
+    savedImagesRunRef.current = d.id // 画像は既にDBにあるので再保存しない
+    setDraftToRestore(null)
+  }, [draftToRestore, restoreImages])
+
+  const handleDismissDraft = useCallback(async () => {
+    setDraftToRestore(null)
+    await clearDraft().catch(() => {})
+  }, [])
 
   // processedImages が差し替わったらインデックスをリセット
   useEffect(() => { setPendingImageIndex(0) }, [processedImages])
@@ -145,6 +290,7 @@ export default function App() {
       resetState()
 
       const runId = crypto.randomUUID()
+      setCurrentRunId(runId)
       const runCreatedAt = Date.now()
       const successItems: Array<{ result: OCRResult; thumbnailDataUrl: string }> = []
       const sessionResultsAccum: OCRResult[] = []
@@ -194,6 +340,10 @@ export default function App() {
     setIsProcessing(false)
     setIsReadyToProcess(false)
     setPendingImageIndex(0)
+    setCurrentRunId(null)
+    savedImagesRunRef.current = null
+    userResizedRef.current = false
+    clearDraft().catch(() => {})
   }
 
   // 領域 OCR の共通ハンドラ（pending・result 両方から呼ぶ）
@@ -208,6 +358,22 @@ export default function App() {
       setRegionOCRDialog(prev => prev ? { ...prev, isProcessing: false, result: { textBlocks: [], fullText: '' } } : null)
     }
   }, [processRegion])
+
+  // 認識テキストの手修正：選択中ページの該当ブロックを書き換え、fullText を再構成
+  // （textBlocks を更新するので、透明テキストPDF・ePub・Word・コピーすべてに反映される）
+  const handleEditBlock = useCallback((target: TextBlock, newText: string) => {
+    setSessionResults(prev => prev.map((r, i) => {
+      if (i !== selectedResultIndex) return r
+      const textBlocks = r.textBlocks.map(b =>
+        b.readingOrder === target.readingOrder ? { ...b, text: newText } : b
+      )
+      const fullText = textBlocks.filter(b => b.text).map(b => b.text).join('\n')
+      return { ...r, textBlocks, fullText }
+    }))
+    setSelectedBlock(prev =>
+      prev && prev.readingOrder === target.readingOrder ? { ...prev, text: newText } : prev
+    )
+  }, [selectedResultIndex])
 
   const handleHistorySelect = (run: DBRunEntry) => {
     const restoredResults: OCRResult[] = run.files.map((file, i) => ({
@@ -242,6 +408,23 @@ export default function App() {
       />
 
       <main className="main">
+        {draftToRestore && !hasResults && !isWorking && (
+          <div className="draft-banner">
+            <span className="draft-banner-text">
+              {lang === 'ja'
+                ? `前回の校正作業が残っています（${draftToRestore.files.length}ページ・${new Date(draftToRestore.createdAt).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })} 保存）`
+                : `Unsaved proofreading from last time (${draftToRestore.files.length} page(s))`}
+            </span>
+            <div className="draft-banner-actions">
+              <button className="btn btn-primary" onClick={handleRestoreDraft}>
+                {lang === 'ja' ? '復元する' : 'Restore'}
+              </button>
+              <button className="btn btn-secondary" onClick={handleDismissDraft}>
+                {lang === 'ja' ? '破棄' : 'Discard'}
+              </button>
+            </div>
+          </div>
+        )}
         {!hasResults && !isWorking && !isModelLoading && !hasPendingImages && (
           <section className="upload-section">
             <FileDropZone onFilesSelected={handleFilesSelected} lang={lang} disabled={isWorking} />
@@ -438,7 +621,11 @@ export default function App() {
                 </button>
               </div>
 
-              <div className="result-main">
+              <div
+                className="result-main resizable"
+                ref={resultMainRef}
+                style={{ '--right-w': `${rightWidth}px` } as React.CSSProperties}
+              >
                 <div className="result-left">
                   {!isProcessing && (
                     <button className="btn btn-secondary btn-above-viewer" onClick={handleClear}>
@@ -468,9 +655,17 @@ export default function App() {
                   </p>
                 </div>
 
+                <div
+                  className={`result-divider${isDraggingDivider ? ' dragging' : ''}`}
+                  onMouseDown={startDividerDrag}
+                  role="separator"
+                  aria-orientation="vertical"
+                  title={lang === 'ja' ? 'ドラッグで幅を調整' : 'Drag to resize'}
+                />
+
                 <div className="result-right">
-                  <ResultPanel result={currentResult} selectedBlock={selectedBlock} selectedPageBlockText={selectedPageBlockText} lang={lang} />
-                  <ResultActions results={sessionResults} currentResult={currentResult} lang={lang} />
+                  <ResultPanel result={currentResult} selectedBlock={selectedBlock} selectedPageBlockText={selectedPageBlockText} onEditBlock={handleEditBlock} lang={lang} />
+                  <ResultActions results={sessionResults} currentResult={currentResult} processedImages={processedImages} lang={lang} />
                 </div>
               </div>
 

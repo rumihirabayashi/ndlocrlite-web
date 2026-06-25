@@ -2,8 +2,8 @@ import type { Translations } from './ja'
 
 export const en: Translations = {
   app: {
-    title: 'NDLOCR-Lite Web',
-    subtitle: 'Japanese OCR Tool Running in the Browser',
+    title: 'Read-aloud OCR',
+    subtitle: 'Turn scans into accessible PDF / ePub / Word (modified NDLOCR-Lite Web)',
   },
   upload: {
     dropzone: 'Drag & drop files here, or click to select',

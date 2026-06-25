@@ -1,6 +1,19 @@
-# NDLOCR-Lite Web
+# 読み上げ用OCR（NDLOCR-Lite Web 改変版）
 
-**ブラウザで動く日本語OCRツール**
+> **これは改変版（フォーク）です。**
+> 本リポジトリは、橋本雄太氏の **[NDLOCR-Lite Web](https://github.com/yuta1984/ndlocrlite-web)**（CC BY 4.0）を、
+> 平林ルミ（[テクノロジーノート](https://rumihirabayashi.com/)）が**読み上げ支援向けに改変**したものです。
+> ライセンスは原作と同じ **[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/deed.ja)**。
+>
+> **おもな追加・変更点**
+> - 透明テキスト付きPDF（検索・読み上げ・レイアウト保持／縦書き対応）の書き出し
+> - ePub（見出しで章分け）・見出し付きWord（.docx）の書き出し
+> - 認識結果を画面で校正編集できる機能、作業の一時保存・復元
+> - 画像／テキストの幅調整、サムネイル上段表示などのUI調整
+>
+> 原作の機能・モデル・帰属表示はそのまま尊重しています。
+
+**スキャン資料を、読み上げ・検索できるPDF/ePub/Wordに変換するブラウザ完結ツール**
 
 本ツールは、国立国会図書館（NDL）が開発・公開している **[NDLOCR-Lite](https://github.com/ndl-lab/ndlocr-lite)**（NDL Lab）を元にして、WebブラウザのみでOCR処理が完結するよう移植・再実装したものです。レイアウト検出モデル（DEIMv2）は NDLOCR-Lite のものを利用しており、文字認識モデル（PARSeq）は独自に再学習した改良版（入力高さ 24px、tegaki3データ追加）を使用しています。
 

@@ -14,6 +14,8 @@ export interface DBRunFile {
   textBlocks: TextBlock[]
   fullText: string
   processingTimeMs: number
+  imageFullDataUrl?: string // フル解像度画像 (base64)。一時保存(ドラフト)の復元・PDF再出力用
+  pageIndex?: number        // PDFのページ番号（1始まり）
 }
 
 // 1回の実行（複数ファイルをまとめた単位）

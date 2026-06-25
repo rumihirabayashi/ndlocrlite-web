@@ -41,10 +41,14 @@ export function ImageViewer({
       img.addEventListener('load', updateSize)
       updateSize()
     }
+    // 仕切りドラッグ等でコンテナ幅が変わったときもオーバーレイを追従させる
+    const ro = new ResizeObserver(updateSize)
+    if (img) ro.observe(img)
     window.addEventListener('resize', updateSize)
     return () => {
       img?.removeEventListener('load', updateSize)
       window.removeEventListener('resize', updateSize)
+      ro.disconnect()
     }
   }, [imageDataUrl])
 
