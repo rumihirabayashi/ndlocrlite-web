@@ -71,3 +71,226 @@
 /* 認識前のコントロール（組み方向＋認識開始） */
 .pre-ocr-controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 0.5rem; }
 .pre-ocr-controls .btn-above-viewer { width: auto; margin-bottom: 0; flex: 1; min-width: 160px; }
+
+/* ============================================================
+   表紙（ピタッとレンズ）— pdf-aloud の表紙レイアウトを緑系で踏襲
+   ============================================================ */
+.lens-welcome {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: linear-gradient(160deg, #f3faf4 0%, #e9f5ec 100%);
+}
+
+/* ブランドヒーロー */
+.lens-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 1rem 1.5rem;
+  flex-wrap: wrap;
+}
+.lens-logo { line-height: 0; color: #2e7d32; }
+.lens-logo svg { height: 40px; width: auto; display: block; }
+.lens-brand-text { display: flex; flex-direction: row; align-items: center; gap: 0.7rem; }
+.lens-brand-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  border-left: 2px solid #cfe3d3;
+  padding-left: 0.7rem;
+}
+.lens-brand-name {
+  font-size: 1.9rem;
+  font-weight: 800;
+  color: #2e7d32;
+  letter-spacing: 0.02em;
+  line-height: 1.1;
+}
+.lens-brand-sub {
+  font-family: 'Lora', 'Noto Serif JP', serif;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #6b7280;
+}
+.lens-brand-catch {
+  font-family: 'Lora', 'Noto Serif JP', serif;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: #1b5e20;
+}
+.lens-actions { margin-left: auto; display: flex; align-items: center; gap: 0.5rem; }
+
+.lens-btn-lang {
+  background: #fff;
+  color: #1b5e20;
+  border: 1.5px solid #a5d2ab;
+  border-radius: 8px;
+  padding: 0.4rem 0.8rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.lens-btn-lang:hover { background: #eaf5ec; }
+
+.lens-btn-icon {
+  background: #fff;
+  border: 1.5px solid #a5d2ab;
+  border-radius: 8px;
+  font-size: 1.1rem;
+  padding: 0.3rem 0.55rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.lens-btn-icon:hover { background: #eaf5ec; }
+
+.lens-btn-open {
+  background: #2e7d32;
+  color: #fff;
+  padding: 0.5rem 1.1rem;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.lens-btn-open:hover { background: #1b5e20; }
+
+/* メイン */
+.lens-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.8rem;
+  padding: 2.5rem;
+}
+
+.lens-drop-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  width: min(580px, 92vw);
+  padding: 3rem 2.6rem;
+  background: #fff;
+  border: 4px dashed #8ec99a;
+  border-radius: 28px;
+  cursor: pointer;
+  box-shadow: 0 8px 26px rgba(46,125,50,0.16);
+  transition: transform 0.12s, border-color 0.12s, background 0.12s;
+  text-align: center;
+}
+.lens-drop-card:hover { transform: translateY(-2px); border-color: #2e7d32; }
+.lens-drop-card.over { background: #eaf5ec; border-color: #2e7d32; transform: scale(1.02); }
+.lens-drop-icon { line-height: 0; color: #2e7d32; }
+.lens-drop-icon svg { width: 96px; height: 96px; display: block; }
+.lens-drop-main { font-size: 2.2rem; font-weight: 800; color: #2e7d32; }
+.lens-drop-sub { font-size: 1rem; color: #6b7280; max-width: 460px; }
+
+/* 補助ボタン */
+.lens-sub-actions { display: flex; gap: 0.75rem; flex-wrap: wrap; justify-content: center; }
+
+/* 3ステップ */
+.lens-steps {
+  display: flex;
+  align-items: center;
+  gap: 1.6rem;
+  margin-top: 0.4rem;
+}
+.lens-step { display: flex; flex-direction: column; align-items: center; gap: 0.4rem; }
+.lens-step-ic {
+  width: 104px; height: 104px;
+  display: flex; align-items: center; justify-content: center;
+  background: #eaf5ec;
+  color: #2e7d32;
+  border-radius: 50%;
+  box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+}
+.lens-step-ic svg { width: 52px; height: 52px; display: block; }
+.lens-step-label { font-size: 1.3rem; font-weight: 700; color: #7a9b80; }
+.lens-step-arrow { font-size: 2.4rem; color: #8ec99a; font-weight: 800; }
+
+/* クレジットフッタ */
+.lens-credit {
+  flex-shrink: 0;
+  padding: 1.2rem 1.5rem;
+  background: rgba(255,255,255,0.7);
+  border-top: 1px solid #d3e7d7;
+  font-family: 'Lora', 'Noto Serif JP', serif;
+  font-size: 0.9rem;
+  line-height: 1.8;
+  color: #5b6470;
+}
+.lens-credit-inner {
+  max-width: 1180px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 1.6rem;
+}
+.lens-credit-text { flex: 1 1 auto; min-width: 0; }
+.lens-credit-badges {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.lens-credit-badges .lens-reader-badge { width: 100%; }
+@media (max-width: 760px) {
+  .lens-credit-inner { flex-direction: column; align-items: stretch; gap: 0.8rem; }
+  .lens-credit-badges { flex-direction: row; flex-wrap: wrap; }
+  .lens-credit-badges .lens-reader-badge { width: auto; flex: 1 1 auto; }
+}
+.lens-credit p { margin: 0 0 0.5rem; }
+.lens-credit p:last-child { margin-bottom: 0; }
+.lens-credit a { color: #2e7d32; font-weight: 600; }
+.lens-credit a:hover { color: #1b5e20; }
+.lens-credit-author { color: #6b7280; }
+
+/* 相互リンクバッジ（とんとんリーダーへ） */
+.lens-reader-badge {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.75rem;
+  background: #fff;
+  border: 1.5px solid #a5d2ab;
+  border-radius: 11px;
+  color: #1b5e20 !important;
+  text-decoration: none;
+  box-shadow: 0 1px 5px rgba(46,125,50,0.14);
+  transition: background 0.12s, transform 0.12s;
+}
+.lens-reader-badge:hover { background: #eaf5ec; transform: translateY(-1px); text-decoration: none; }
+.lens-reader-badge-ic { width: 22px; height: 22px; color: #2e7d32; flex-shrink: 0; }
+.lens-reader-badge-ext { width: 13px; height: 13px; flex-shrink: 0; opacity: 0.7; }
+.lens-reader-badge-text { display: flex; flex-direction: column; line-height: 1.2; font-family: 'Noto Sans JP', system-ui, sans-serif; }
+.lens-reader-badge-main { font-weight: 700; font-size: 0.82rem; }
+.lens-reader-badge-sub { font-size: 0.72rem; color: #5a8a60; font-weight: 600; }
+
+.lens-draft-banner { margin: 0.9rem 1.5rem -0.4rem; }
+
+/* レスポンシブ */
+@media (max-width: 768px) {
+  .lens-head { padding: 0.8rem 1rem; }
+  .lens-logo svg { height: 32px; }
+  .lens-brand-text { flex-direction: column; align-items: flex-start; gap: 0.2rem; }
+  .lens-brand-lines { border-left: none; padding-left: 0; }
+  .lens-brand-name { font-size: 1.45rem; }
+  .lens-brand-sub { font-size: 0.78rem; }
+  .lens-brand-catch { font-size: 0.85rem; }
+  .lens-actions { gap: 0.4rem; }
+  .lens-btn-open { font-size: 0.9rem; padding: 0.4rem 0.8rem; }
+  .lens-main { gap: 1.3rem; padding: 1.4rem; }
+  .lens-drop-card { padding: 1.9rem 1.4rem; border-radius: 20px; }
+  .lens-drop-icon svg { width: 64px; height: 64px; }
+  .lens-drop-main { font-size: 1.6rem; }
+  .lens-drop-sub { font-size: 0.85rem; }
+  .lens-steps { gap: 0.7rem; }
+  .lens-step-ic { width: 66px; height: 66px; }
+  .lens-step-ic svg { width: 32px; height: 32px; }
+  .lens-step-label { font-size: 0.95rem; }
+  .lens-step-arrow { font-size: 1.7rem; }
+}

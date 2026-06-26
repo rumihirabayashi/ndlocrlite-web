@@ -12,9 +12,11 @@ export function Header({ lang, onToggleLanguage, onOpenSettings, onOpenHistory, 
   return (
     <header className="header">
       <button className="header-title" onClick={onLogoClick}>
-        <h1>{lang === 'ja' ? 'PDF読み上げ用OCR' : 'Read-Aloud OCR for PDF'}</h1>
+        <h1>{lang === 'ja' ? 'ピタッとレンズ' : 'Pitatto Lens'}</h1>
         <span className="header-subtitle">
-          {lang === 'ja' ? 'NDLOCR-Lite Web 改変版' : 'Modified NDLOCR-Lite Web'}
+          {lang === 'ja'
+            ? 'PDF読み上げ用OCR（NDLOCR-Lite Web 改変版）'
+            : 'Read-Aloud OCR (Modified NDLOCR-Lite Web)'}
         </span>
       </button>
       <div className="header-actions">

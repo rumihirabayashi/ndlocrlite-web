@@ -7,8 +7,7 @@ import { useFileProcessor } from './hooks/useFileProcessor'
 import { useResultCache } from './hooks/useResultCache'
 import { Header } from './components/layout/Header'
 import { Footer } from './components/layout/Footer'
-import { FileDropZone } from './components/upload/FileDropZone'
-import { DirectoryPicker } from './components/upload/DirectoryPicker'
+import { WelcomeScreen } from './components/WelcomeScreen'
 import { ProgressBar } from './components/progress/ProgressBar'
 import { ImageViewer } from './components/viewer/ImageViewer'
 import { ResultPanel } from './components/results/ResultPanel'
@@ -391,6 +390,61 @@ export default function App() {
   const isWorking = isLoadingFiles || isProcessing
   const hasResults = sessionResults.length > 0
   const hasPendingImages = processedImages.length > 0 && !isWorking && !hasResults
+  // 表紙（ランディング）：処理中でも結果でもない空状態
+  const isLanding = !hasResults && !isWorking && !isModelLoading && !hasPendingImages
+
+  // 設定・履歴モーダルは表紙でも通常画面でも共通で出す
+  const modals = (
+    <>
+      {showHistory && (
+        <HistoryPanel
+          runs={historyRuns}
+          onSelect={handleHistorySelect}
+          onClear={clearResults}
+          onClose={() => setShowHistory(false)}
+          lang={lang}
+        />
+      )}
+      {showSettings && (
+        <SettingsModal onClose={() => setShowSettings(false)} lang={lang} />
+      )}
+    </>
+  )
+
+  if (isLanding) {
+    return (
+      <div className="app">
+        {draftToRestore && (
+          <div className="draft-banner lens-draft-banner">
+            <span className="draft-banner-text">
+              {lang === 'ja'
+                ? `前回の校正作業が残っています（${draftToRestore.files.length}ページ・${new Date(draftToRestore.createdAt).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })} 保存）`
+                : `Unsaved proofreading from last time (${draftToRestore.files.length} page(s))`}
+            </span>
+            <div className="draft-banner-actions">
+              <button className="btn btn-primary" onClick={handleRestoreDraft}>
+                {lang === 'ja' ? '復元する' : 'Restore'}
+              </button>
+              <button className="btn btn-secondary" onClick={handleDismissDraft}>
+                {lang === 'ja' ? '破棄' : 'Discard'}
+              </button>
+            </div>
+          </div>
+        )}
+        <WelcomeScreen
+          lang={lang}
+          onFilesSelected={handleFilesSelected}
+          onToggleLanguage={toggleLanguage}
+          onOpenSettings={() => setShowSettings(true)}
+          onOpenHistory={() => setShowHistory(true)}
+          onPaste={handlePasteFromClipboard}
+          onSampleLoad={handleSampleLoad}
+          disabled={isWorking}
+        />
+        {modals}
+      </div>
+    )
+  }
 
   return (
     <div className="app">
@@ -420,21 +474,6 @@ export default function App() {
             </div>
           </div>
         )}
-        {!hasResults && !isWorking && !isModelLoading && !hasPendingImages && (
-          <section className="upload-section">
-            <FileDropZone onFilesSelected={handleFilesSelected} lang={lang} disabled={isWorking} />
-            <div className="upload-actions">
-              <DirectoryPicker onFilesSelected={handleFilesSelected} lang={lang} disabled={isWorking} />
-              <button className="btn btn-secondary" onClick={handlePasteFromClipboard} disabled={isWorking}>
-                {lang === 'ja' ? 'クリップボードから貼り付け' : 'Paste from Clipboard'}
-              </button>
-              <button className="btn btn-secondary" onClick={handleSampleLoad} disabled={isWorking}>
-                {lang === 'ja' ? 'サンプルを試す' : 'Try Sample'}
-              </button>
-            </div>
-          </section>
-        )}
-
         {hasPendingImages && (
           <section className="result-section">
             {/* 左サイドバー */}
@@ -684,18 +723,7 @@ export default function App() {
 
       <Footer lang={lang} />
 
-      {showHistory && (
-        <HistoryPanel
-          runs={historyRuns}
-          onSelect={handleHistorySelect}
-          onClear={clearResults}
-          onClose={() => setShowHistory(false)}
-          lang={lang}
-        />
-      )}
-      {showSettings && (
-        <SettingsModal onClose={() => setShowSettings(false)} lang={lang} />
-      )}
+      {modals}
     </div>
   )
 }
