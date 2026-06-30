@@ -46,7 +46,6 @@ export function ResultActions({ results, currentResult, processedImages, orienta
   const [txtCurrentOnly, setTxtCurrentOnly] = useState(false)
   const [docxBodyFont, setDocxBodyFont] = useState('')      // 既定＝指定なし
   const [docxHeadingFont, setDocxHeadingFont] = useState('') // 既定＝指定なし
-  const [naturalReaderMode, setNaturalReaderMode] = useState(false) // PDF: NaturalReader/Chromebook向け最適化（実験）
   const [exporting, setExporting] = useState(false)
 
   const applyOptions = (text: string) =>
@@ -91,8 +90,8 @@ export function ResultActions({ results, currentResult, processedImages, orienta
           const blocks = [...results[i].textBlocks].sort((a, b) => a.readingOrder - b.readingOrder)
           pages.push({ pngBytes: await imageDataToPngBytes(img), width: img.width, height: img.height, blocks })
         }
-        const bytes = await buildSearchablePdf(pages, { orientation, naturalReaderMode })
-        downloadPdf(bytes, naturalReaderMode ? `${baseName}_NR最適化` : baseName)
+        const bytes = await buildSearchablePdf(pages, { orientation })
+        downloadPdf(bytes, baseName)
       } else if (format === 'epub') {
         const pages = results.slice(0, n).map((r, i) => ({ fileName: r.fileName, pageLabel: pageLabel(i), blocks: r.textBlocks }))
         downloadBlob(await buildEpub(pages, { title: baseName }), `${baseName}.epub`)
@@ -141,17 +140,6 @@ export function ResultActions({ results, currentResult, processedImages, orienta
                 ? `組み方向：${orientation === 'vertical' ? '縦書き' : orientation === 'horizontal' ? '横書き' : '自動判定'}（認識時の設定を使用）`
                 : `Writing mode: ${orientation} (set before recognition)`}
             </div>
-            <label className="result-actions-option">
-              <input type="checkbox" checked={naturalReaderMode} onChange={(e) => setNaturalReaderMode(e.target.checked)} />
-              {lang === 'ja' ? 'NaturalReader / Chromebook向けに最適化（実験）' : 'Optimize for NaturalReader / Chromebook (experimental)'}
-            </label>
-            {naturalReaderMode && (
-              <div className="selected-text-hint">
-                {lang === 'ja'
-                  ? '※不可視テキストを「横書き・読み順」で重ねます。NaturalReader等の横書きリーダーが見出しを含め全文を正しい順で読み上げます。読み上げ中のハイライトは縦の文字ではなく上から下へ進みます。Apple系（プレビュー/VoiceOver/iOS）で読む場合はオフが無難です。'
-                  : 'Overlays the invisible text horizontally in reading order, so horizontal readers (e.g. NaturalReader) read everything—including headings—in the correct order. The reading highlight moves top-to-bottom rather than tracking the vertical glyphs. Leave off for Apple PDFKit (Preview/VoiceOver/iOS).'}
-              </div>
-            )}
           </>
         )}
 

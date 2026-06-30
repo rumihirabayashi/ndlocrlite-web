@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# モデルのローカル退避（配信はCloudflare R2。コミット不要の150MB）
+_models_local_backup/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

@@ -2,3 +2,11 @@
   Cross-Origin-Opener-Policy: same-origin
   Cross-Origin-Embedder-Policy: require-corp
   X-Robots-Tag: noindex, nofollow
+
+# AIモデル（ファイル名固定）。更新時はファイル名を変えること
+/models/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Viteのハッシュ付きアセット（wasm・フォント・JS・CSS）。内容変更＝別ハッシュなので安全
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
