@@ -53,6 +53,8 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
   const [isReadyToProcess, setIsReadyToProcess] = useState(false)
+  // 認識に失敗したページ番号（1始まり）。処理完了後の通知バナー表示用
+  const [failedPageNumbers, setFailedPageNumbers] = useState<number[]>([])
   const [pendingImageIndex, setPendingImageIndex] = useState(0)
   // 組み方向（認識の読み順とPDF書き出しの両方に反映）
   const [orientation, setOrientation] = useState<Orientation>('auto')
@@ -179,6 +181,7 @@ export default function App() {
     restoreImages(imgs)
     setSessionResults(results)
     setSelectedResultIndex(0)
+    setFailedPageNumbers([])
     setCurrentRunId(d.id)
     savedImagesRunRef.current = d.id // 画像は既にDBにあるので再保存しない
     setDraftToRestore(null)
@@ -271,33 +274,48 @@ export default function App() {
       setIsProcessing(true)
       setSessionResults([])
       setSelectedResultIndex(0)
+      setFailedPageNumbers([])
       resetState()
 
       const runId = crypto.randomUUID()
       setCurrentRunId(runId)
       const runCreatedAt = Date.now()
-      const successItems: Array<{ result: OCRResult; thumbnailDataUrl: string }> = []
+      // 不変条件: sessionResults[i] は常に processedImages[i] に対応する。
+      // 失敗ページはスキップせず、空のエラープレースホルダを同じ添字に入れる。
       const sessionResultsAccum: OCRResult[] = []
+      const failedPages: number[] = []
 
       for (let i = 0; i < processedImages.length; i++) {
         const image = processedImages[i]
         try {
           const result = await processImage(image, i, processedImages.length, orientation)
-          successItems.push({ result, thumbnailDataUrl: image.thumbnailDataUrl })
           sessionResultsAccum.push(result)
-          setSessionResults([...sessionResultsAccum])
-          setSelectedResultIndex(sessionResultsAccum.length - 1)
         } catch (err) {
           console.error(`OCR failed for ${image.fileName}:`, err)
+          failedPages.push(i + 1)
+          sessionResultsAccum.push({
+            id: `${runId}-${i}`,
+            fileName: image.pageIndex ? `${image.fileName} (p.${image.pageIndex})` : image.fileName,
+            imageDataUrl: image.thumbnailDataUrl,
+            textBlocks: [],
+            fullText: '',
+            processingTimeMs: 0,
+            createdAt: runCreatedAt,
+            error: true,
+          })
         }
+        setSessionResults([...sessionResultsAccum])
+        setSelectedResultIndex(sessionResultsAccum.length - 1)
       }
 
-      if (successItems.length > 0) {
+      // 成功ページが1つでもあれば履歴に保存。ページ順・ページ数を保つため、
+      // 失敗ページも空テキストのまま同じ順序で含める。
+      if (sessionResultsAccum.some((r) => !r.error)) {
         const runEntry: DBRunEntry = {
           id: runId,
-          files: successItems.map(({ result, thumbnailDataUrl }) => ({
+          files: sessionResultsAccum.map((result, i) => ({
             fileName: result.fileName,
-            imageDataUrl: thumbnailDataUrl,
+            imageDataUrl: processedImages[i].thumbnailDataUrl,
             textBlocks: result.textBlocks,
             fullText: result.fullText,
             processingTimeMs: result.processingTimeMs,
@@ -307,6 +325,7 @@ export default function App() {
         await saveRun(runEntry)
       }
 
+      setFailedPageNumbers(failedPages)
       setIsProcessing(false)
       setIsReadyToProcess(false)
     }
@@ -323,6 +342,7 @@ export default function App() {
     resetState()
     setIsProcessing(false)
     setIsReadyToProcess(false)
+    setFailedPageNumbers([])
     setPendingImageIndex(0)
     setCurrentRunId(null)
     savedImagesRunRef.current = null
@@ -369,6 +389,10 @@ export default function App() {
     }))
   }, [selectedResultIndex])
 
+  // 履歴の run には縮小サムネイル（imageDataUrl）しか保存されておらず、
+  // フル解像度画像は無い（DBRunFile.imageFullDataUrl はドラフト専用）。
+  // そのため processedImages は復元せずクリアし、テキストのみの表示に切り替える。
+  // これにより「現在の画像 × 過去のテキスト」の混在を防ぎ、PDF書き出しは無効化する。
   const handleHistorySelect = (run: DBRunEntry) => {
     const restoredResults: OCRResult[] = run.files.map((file, i) => ({
       id: `${run.id}-${i}`,
@@ -379,10 +403,13 @@ export default function App() {
       processingTimeMs: file.processingTimeMs,
       createdAt: run.createdAt,
     }))
+    clearImages() // 現在読み込み中の画像を破棄（過去テキストと混ざらないように）
     setSessionResults(restoredResults)
     setSelectedResultIndex(0)
     setSelectedBlock(null)
     setSelectedPageBlock(null)
+    setCurrentRunId(null) // 履歴表示中はドラフト自動保存しない
+    setFailedPageNumbers([])
     setShowHistory(false)
   }
 
@@ -390,6 +417,12 @@ export default function App() {
   const isWorking = isLoadingFiles || isProcessing
   const hasResults = sessionResults.length > 0
   const hasPendingImages = processedImages.length > 0 && !isWorking && !hasResults
+  // 履歴からの表示：結果はあるが画像が無い状態（PDFは書き出せず、テキストのみ利用可）
+  const textOnlyHistory = hasResults && processedImages.length === 0
+  // サイドバー・ページナビの項目。通常は画像から、履歴表示時は結果テキストから作る。
+  const pageItems = processedImages.length > 0
+    ? processedImages.map((img) => ({ fileName: img.fileName, pageIndex: img.pageIndex as number | undefined, thumb: img.thumbnailDataUrl }))
+    : sessionResults.map((r) => ({ fileName: r.fileName, pageIndex: undefined as number | undefined, thumb: r.imageDataUrl }))
   // 表紙（ランディング）：処理中でも結果でもない空状態
   const isLanding = !hasResults && !isWorking && !isModelLoading && !hasPendingImages
 
@@ -580,21 +613,23 @@ export default function App() {
           </div>
         )}
 
-        {(hasResults || isProcessing) && processedImages.length > 0 && (
+        {(hasResults || isProcessing) && (processedImages.length > 0 || textOnlyHistory) && (
           <section className="result-section">
-            {/* 左サイドバー: 全ファイル一覧（未完了も含む） */}
-            {processedImages.length > 1 && (
+            {/* 左サイドバー: 全ファイル一覧（未完了・失敗も含む） */}
+            {pageItems.length > 1 && (
               <div className="result-sidebar">
-                {processedImages.map((img, i) => {
+                {pageItems.map((item, i) => {
                   const result = sessionResults[i]
                   const isInProgress = !result && isProcessing && i === sessionResults.length
                   const isPending = !result && !isInProgress
+                  const isError = !!result?.error
                   const warnCount = pageWarnCounts[i] || 0
                   const warnTitle = warnCount > 0
                     ? (lang === 'ja' ? `　要確認 ${warnCount} 件` : ` · ${warnCount} to review`)
                     : ''
+                  const errorTitle = isError ? (lang === 'ja' ? '　認識に失敗（画像のみ）' : ' · recognition failed (image only)') : ''
                   const folio = result?.folio
-                  const fileLabel = img.pageIndex ? `${img.fileName} (p.${img.pageIndex})` : img.fileName
+                  const fileLabel = item.pageIndex ? `${item.fileName} (p.${item.pageIndex})` : item.fileName
                   const folioTitle = folio ? (lang === 'ja' ? `　書籍ページ ${folio}` : ` · book p.${folio}`) : ''
                   return (
                     <button
@@ -602,11 +637,16 @@ export default function App() {
                       className={`result-sidebar-item ${result && i === selectedResultIndex ? 'active' : ''} ${isPending || isInProgress ? 'sidebar-pending' : ''}`}
                       onClick={() => { if (result) { setSelectedResultIndex(i); setSelectedBlock(null) } }}
                       disabled={!result}
-                      title={`${i + 1}　${fileLabel}${folioTitle}${warnTitle}`}
+                      title={`${i + 1}　${fileLabel}${folioTitle}${errorTitle}${warnTitle}`}
                     >
                       <div className="result-sidebar-thumb-wrap">
-                        <img src={result ? result.imageDataUrl : img.thumbnailDataUrl} alt={img.fileName} />
+                        <img src={result ? result.imageDataUrl : item.thumb} alt={item.fileName} />
                         {isInProgress && <div className="sidebar-item-spinner" />}
+                        {isError && (
+                          <span className="sidebar-error-badge" title={errorTitle.trim()}>
+                            ❌
+                          </span>
+                        )}
                         {warnCount > 0 && (
                           <span className="sidebar-warn-badge" title={warnTitle.trim()}>
                             ⚠️{warnCount}
@@ -636,6 +676,33 @@ export default function App() {
                 </div>
               )}
 
+              {/* 認識失敗ページの通知（失敗ページは画像のみで書き出される） */}
+              {!isProcessing && failedPageNumbers.length > 0 && (
+                <div className="draft-banner ocr-fail-banner">
+                  <span className="draft-banner-text">
+                    {lang === 'ja'
+                      ? `${failedPageNumbers.join('、')}ページ目の認識に失敗しました。該当ページは画像のみで書き出されます。`
+                      : `Recognition failed for page(s) ${failedPageNumbers.join(', ')}. Those pages are exported as image-only.`}
+                  </span>
+                  <div className="draft-banner-actions">
+                    <button className="btn btn-secondary" onClick={() => setFailedPageNumbers([])}>
+                      {lang === 'ja' ? '閉じる' : 'Dismiss'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* 履歴（テキストのみ）表示の注意書き */}
+              {textOnlyHistory && (
+                <div className="draft-banner ocr-history-banner">
+                  <span className="draft-banner-text">
+                    {lang === 'ja'
+                      ? '履歴からはテキストのみ利用できます（画像は保存されていないため、PDFは書き出せません）。'
+                      : 'Only text is available from history (images are not stored, so PDF export is disabled).'}
+                  </span>
+                </div>
+              )}
+
               {/* ページナビゲーション */}
               <div className="result-page-nav">
                 <button
@@ -655,15 +722,16 @@ export default function App() {
                     setSelectedPageBlock(null)
                   }}
                 >
-                  {processedImages.map((img, i) => {
-                    const label = img.pageIndex ? `${img.fileName} (p.${img.pageIndex})` : img.fileName
+                  {pageItems.map((item, i) => {
+                    const label = item.pageIndex ? `${item.fileName} (p.${item.pageIndex})` : item.fileName
                     const warnCount = pageWarnCounts[i] || 0
                     const warnMark = warnCount > 0 ? `　⚠️${warnCount}` : ''
+                    const errorMark = sessionResults[i]?.error ? (lang === 'ja' ? '　❌認識失敗' : '　❌failed') : ''
                     const folio = sessionResults[i]?.folio
                     const folioMark = folio ? `　📖${folio}` : ''
                     return (
                       <option key={i} value={i} disabled={i >= sessionResults.length}>
-                        {i + 1} / {processedImages.length}　{label}{folioMark}{warnMark}
+                        {i + 1} / {pageItems.length}　{label}{folioMark}{errorMark}{warnMark}
                       </option>
                     )
                   })}
@@ -689,7 +757,7 @@ export default function App() {
                       {lang === 'ja' ? '新しいファイルを処理' : 'Process New Files'}
                     </button>
                   )}
-                  {currentResult && (
+                  {currentResult && !textOnlyHistory && (
                     <ImageViewer
                       imageDataUrl={currentResult.imageDataUrl}
                       textBlocks={currentResult.textBlocks}
@@ -699,6 +767,13 @@ export default function App() {
                       selectedPageBlock={selectedPageBlock}
                       onPageBlockSelect={(block) => { setSelectedPageBlock(block); setSelectedBlock(null) }}
                     />
+                  )}
+                  {textOnlyHistory && (
+                    <div className="history-image-placeholder">
+                      {lang === 'ja'
+                        ? '履歴の項目には画像が保存されていません。テキストのみ表示しています。'
+                        : 'No image is stored for history items. Showing text only.'}
+                    </div>
                   )}
                 </div>
 
@@ -712,7 +787,7 @@ export default function App() {
 
                 <div className="result-right">
                   <ResultPanel result={currentResult} selectedBlock={selectedBlock} selectedPageBlockText={selectedPageBlockText} onEditBlock={handleEditBlock} onMoveBlock={handleMoveBlock} lang={lang} />
-                  <ResultActions results={sessionResults} currentResult={currentResult} processedImages={processedImages} orientation={orientation} lang={lang} />
+                  <ResultActions results={sessionResults} currentResult={currentResult} processedImages={processedImages} orientation={orientation} pdfAvailable={!textOnlyHistory} lang={lang} />
                 </div>
               </div>
 

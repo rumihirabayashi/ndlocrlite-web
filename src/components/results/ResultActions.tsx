@@ -25,6 +25,8 @@ interface ResultActionsProps {
   currentResult: OCRResult | null
   processedImages: ProcessedImage[]
   orientation: Orientation
+  /** PDF書き出しが可能か（履歴のテキストのみ表示時は画像が無いため false） */
+  pdfAvailable?: boolean
   lang: 'ja' | 'en'
 }
 
@@ -38,7 +40,7 @@ async function imageDataToPngBytes(imageData: ImageData): Promise<Uint8Array> {
   return new Uint8Array(await blob.arrayBuffer())
 }
 
-export function ResultActions({ results, currentResult, processedImages, orientation, lang }: ResultActionsProps) {
+export function ResultActions({ results, currentResult, processedImages, orientation, pdfAvailable = true, lang }: ResultActionsProps) {
   const [copied, setCopied] = useState(false)
   const [includeFileName, setIncludeFileName] = useState(false)
   const [ignoreNewlines, setIgnoreNewlines] = useState(false)
@@ -73,10 +75,9 @@ export function ResultActions({ results, currentResult, processedImages, orienta
   // 選択中の形式で書き出す
   const handleExport = async () => {
     if (results.length === 0) return
+    if (format === 'pdf' && !pdfAvailable) return // 画像が無い履歴表示ではPDFを書き出さない
     setExporting(true)
     try {
-      const n = Math.min(results.length, processedImages.length)
-
       if (format === 'txt') {
         if (txtCurrentOnly && currentResult) {
           downloadText(buildText(currentResult), currentResult.fileName)
@@ -84,6 +85,9 @@ export function ResultActions({ results, currentResult, processedImages, orienta
           downloadText(results.map((r) => buildText(r)).join('\n\n'), baseName)
         }
       } else if (format === 'pdf') {
+        // PDFは画像と対応する透明テキストを重ねる。認識失敗ページ（textBlocks空）は
+        // 画像のみ（透明テキストなし）で含まれ、ページ順・ページ数は保たれる。
+        const n = Math.min(results.length, processedImages.length)
         const pages: ExportPage[] = []
         for (let i = 0; i < n; i++) {
           const img = processedImages[i].imageData
@@ -93,10 +97,11 @@ export function ResultActions({ results, currentResult, processedImages, orienta
         const bytes = await buildSearchablePdf(pages, { orientation })
         downloadPdf(bytes, baseName)
       } else if (format === 'epub') {
-        const pages = results.slice(0, n).map((r, i) => ({ fileName: r.fileName, pageLabel: pageLabel(i), blocks: r.textBlocks }))
+        // テキスト系は全ページを対象にする（失敗ページは空テキストのまま順序を保つ）。
+        const pages = results.map((r, i) => ({ fileName: r.fileName, pageLabel: pageLabel(i), blocks: r.textBlocks }))
         downloadBlob(await buildEpub(pages, { title: baseName }), `${baseName}.epub`)
       } else {
-        const pages = results.slice(0, n).map((r, i) => ({ fileName: r.fileName, pageLabel: pageLabel(i), blocks: r.textBlocks }))
+        const pages = results.map((r, i) => ({ fileName: r.fileName, pageLabel: pageLabel(i), blocks: r.textBlocks }))
         downloadBlob(await buildDocx(pages, { title: baseName, bodyFont: docxBodyFont, headingFont: docxHeadingFont }), `${baseName}.docx`)
       }
     } catch (e) {
@@ -127,13 +132,13 @@ export function ResultActions({ results, currentResult, processedImages, orienta
           {lang === 'ja' ? '形式：' : 'Format: '}
           <select value={format} onChange={(e) => setFormat(e.target.value as ExportFormat)}>
             <option value="txt">{lang === 'ja' ? 'テキスト（.txt）' : 'Text (.txt)'}</option>
-            <option value="pdf">{lang === 'ja' ? '透明テキスト付きPDF（検索・読み上げ・レイアウト保持）' : 'Searchable PDF'}</option>
+            <option value="pdf" disabled={!pdfAvailable}>{lang === 'ja' ? '透明テキスト付きPDF（検索・読み上げ・レイアウト保持）' : 'Searchable PDF'}</option>
             <option value="epub">{lang === 'ja' ? 'ePub（読み上げ向け・リフロー）' : 'ePub'}</option>
             <option value="docx">{lang === 'ja' ? '見出し付きWord（.docx）' : 'Word (.docx)'}</option>
           </select>
         </label>
 
-        {format === 'pdf' && (
+        {format === 'pdf' && pdfAvailable && (
           <>
             <div className="selected-text-hint">
               {lang === 'ja'
@@ -141,6 +146,14 @@ export function ResultActions({ results, currentResult, processedImages, orienta
                 : `Writing mode: ${orientation} (set before recognition)`}
             </div>
           </>
+        )}
+
+        {format === 'pdf' && !pdfAvailable && (
+          <div className="selected-text-hint">
+            {lang === 'ja'
+              ? '履歴からはテキストのみ利用できます。PDFの書き出しには画像が必要です（テキスト・ePub・Wordは書き出せます）。'
+              : 'Only text is available from history. PDF export requires images (Text, ePub and Word are available).'}
+          </div>
         )}
 
         {/* テキスト出力時のオプション */}
@@ -185,7 +198,7 @@ export function ResultActions({ results, currentResult, processedImages, orienta
           </>
         )}
 
-        <button className="btn btn-derivative" onClick={handleExport} disabled={results.length === 0 || exporting}>
+        <button className="btn btn-derivative" onClick={handleExport} disabled={results.length === 0 || exporting || (format === 'pdf' && !pdfAvailable)}>
           {exporting
             ? (lang === 'ja' ? '作成中…' : 'Creating…')
             : (lang === 'ja' ? '書き出す' : 'Export')}
