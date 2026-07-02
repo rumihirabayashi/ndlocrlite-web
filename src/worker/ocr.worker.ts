@@ -8,10 +8,10 @@
  *   LAYOUT_DETECT : バッチOCR用（レイアウト検出のみ実行し LAYOUT_DONE を返す）
  *                   認識フェーズはメインスレッドが N 本の recognition.worker に並列委譲する
  *
- * カスケード文字認識:
- *   charCountCategory=3 → recognizer30 (16×256, ≤30文字)
- *   charCountCategory=2 → recognizer50 (16×384, ≤50文字)
- *   それ以外            → recognizer100 (16×768, ≤100文字)
+ * カスケード文字認識（モデル入力高さは 24px 固定。recognition.worker と一致させること）:
+ *   charCountCategory=3 → recognizer30 (24×256, ≤30文字)
+ *   charCountCategory=2 → recognizer50 (24×384, ≤50文字)
+ *   それ以外            → recognizer100 (24×768, ≤100文字)
  */
 
 import './onnx-config'
@@ -88,15 +88,15 @@ class OCRWorker {
         await this.layoutDetector.initialize(layoutModelData)
 
         this.post({ type: 'OCR_PROGRESS', stage: 'initializing_models', progress: 0.83, message: 'Preparing recognition model (30)...' })
-        this.recognizer30 = new TextRecognizer([1, 3, 16, 256])
+        this.recognizer30 = new TextRecognizer([1, 3, 24, 256])
         await this.recognizer30.initialize(rec30Data)
 
         this.post({ type: 'OCR_PROGRESS', stage: 'initializing_models', progress: 0.90, message: 'Preparing recognition model (50)...' })
-        this.recognizer50 = new TextRecognizer([1, 3, 16, 384])
+        this.recognizer50 = new TextRecognizer([1, 3, 24, 384])
         await this.recognizer50.initialize(rec50Data)
 
         this.post({ type: 'OCR_PROGRESS', stage: 'initializing_models', progress: 0.96, message: 'Preparing recognition model (100)...' })
-        this.recognizer100 = new TextRecognizer([1, 3, 16, 768])
+        this.recognizer100 = new TextRecognizer([1, 3, 24, 768])
         await this.recognizer100.initialize(rec100Data)
       }
 
@@ -125,7 +125,7 @@ class OCRWorker {
     if (this.layoutOnly) {
       // モバイル: rec100 のみ（WASM ランタイムを 1 つに抑えるため）
       const rec100Data = await loadModel('recognition100')
-      this.recognizer100 = new TextRecognizer([1, 3, 16, 768])
+      this.recognizer100 = new TextRecognizer([1, 3, 24, 768])
       await this.recognizer100.initialize(rec100Data)
     } else {
       // デスクトップ: 3モデル全部
@@ -135,11 +135,11 @@ class OCRWorker {
         loadModel('recognition50'),
         loadModel('recognition100'),
       ])
-      this.recognizer30 = new TextRecognizer([1, 3, 16, 256])
+      this.recognizer30 = new TextRecognizer([1, 3, 24, 256])
       await this.recognizer30.initialize(rec30Data)
-      this.recognizer50 = new TextRecognizer([1, 3, 16, 384])
+      this.recognizer50 = new TextRecognizer([1, 3, 24, 384])
       await this.recognizer50.initialize(rec50Data)
-      this.recognizer100 = new TextRecognizer([1, 3, 16, 768])
+      this.recognizer100 = new TextRecognizer([1, 3, 24, 768])
       await this.recognizer100.initialize(rec100Data)
     }
   }

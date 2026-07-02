@@ -107,8 +107,8 @@ function removeSpuriousLineEndQuotes(blocks: TextBlock[]): TextBlock[] {
 }
 
 export class ReadingOrderProcessor {
-  // 正規化グリッドサイズ（参照実装の get_optimal_grid に対応）
-  private readonly GRID = 100
+  // 正規化グリッドの基準ビン数（参照実装 get_optimal_grid: grid = 100 * sqrt(N)）
+  private readonly GRID_BASE = 100
   // 組み方向の強制指定（null=自動判定）。process() 実行中のみ有効
   private forcedVertical: boolean | null = null
 
@@ -232,9 +232,17 @@ export class ReadingOrderProcessor {
     return ranks
   }
 
+  // 参照実装 get_optimal_grid に対応: grid = 100 * sqrt(N)（N=行数）を短辺のビン数とする。
+  // 行数が多いほど解像度を上げ、狭い行間ギャップも検出できるようにする。
+  private getOptimalGrid(n: number): number {
+    return this.GRID_BASE * Math.sqrt(n)
+  }
+
   // ---------------------------------------------------------------------------
   // 参照実装 normalize_bboxes に対応
-  // bboxes を [0, GRID] の整数グリッドにスケーリング
+  // bboxes を整数グリッドにスケーリング（短辺=grid, 長辺=grid×アスペクト比）
+  // 注意: メッシュ生成は O(w×h)。grid が sqrt(N) で伸びるためテーブル面積は概ね
+  //       O(N×アスペクト比) となり、極端に大きな行数でなければメモリは問題にならない。
   // ---------------------------------------------------------------------------
   private normalizeBboxes(bboxes: number[][]): { normBboxes: number[][], w: number, h: number } {
     const xMin = Math.min(...bboxes.map(b => b[0]))
@@ -249,10 +257,12 @@ export class ReadingOrderProcessor {
       return { normBboxes: norm, w: 2, h: 2 }
     }
 
-    // 短辺に GRID を割り当て、長辺はアスペクト比を維持
-    const isPortrait = hPage >= wPage
-    const xGrid = isPortrait ? this.GRID * (wPage / hPage) : this.GRID
-    const yGrid = isPortrait ? this.GRID : this.GRID * (hPage / wPage)
+    // 短辺に grid を割り当て、長辺はアスペクト比でスケール（参照 normalize_bboxes と同一の向き）。
+    //   x_grid = grid if w_page < h_page else grid * (w_page/h_page)
+    //   y_grid = grid if h_page < w_page else grid * (h_page/w_page)
+    const grid = this.getOptimalGrid(bboxes.length)
+    const xGrid = wPage < hPage ? grid : grid * (wPage / hPage)
+    const yGrid = hPage < wPage ? grid : grid * (hPage / wPage)
     const w = Math.ceil(xGrid) + 1
     const h = Math.ceil(yGrid) + 1
 

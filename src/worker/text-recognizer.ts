@@ -187,10 +187,11 @@ export class TextRecognizer {
         const maxScore = Math.max(...scores)
         const maxIndex = scores.indexOf(maxScore)
 
-        // <eos> (ID=0) で終了
+        // 語彙 = <eos>(index 0) + charset(7141文字)。特殊トークンは <eos> のみで、
+        // 出力 index i (i≥1) は charset[i-1] に対応する（実モデルで検証済み）。
+        // <eos> で終了。以前は maxIndex<4 をスキップしていたが、それだと
+        // charset 先頭3文字（半角スペース・!・"）が永久に出力されないバグだった。
         if (maxIndex === 0) break
-        // 特殊トークン (<s>=1, </s>=2, <pad>=3) をスキップ
-        if (maxIndex < 4) continue
 
         resultClassIds.push(maxIndex - 1)
       }
