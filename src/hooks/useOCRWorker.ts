@@ -7,7 +7,10 @@ import { ReadingOrderProcessor, extractFolio, type Orientation } from '../worker
 // ?worker import → Vite が recognition.worker.ts を独立バンドルして Worker コンストラクタを返す
 import RecognitionWorkerFactory from '../worker/recognition.worker.ts?worker'
 
-const isMobile = /iPhone|iPad|Android/i.test(navigator.userAgent)
+// iPadOS 13+ のSafariはUAが「Macintosh」を名乗るため、タッチ点数で判別する
+const isMobile =
+  /iPhone|iPad|Android/i.test(navigator.userAgent) ||
+  (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1)
 const N_REC_WORKERS = isMobile ? 0 : Math.min(Math.max(navigator.hardwareConcurrency ?? 4, 2), 8)
 const readingOrderProcessor = new ReadingOrderProcessor()
 

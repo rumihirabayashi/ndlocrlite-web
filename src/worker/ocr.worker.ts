@@ -119,12 +119,22 @@ class OCRWorker {
   }
 
   /** 認識モデルを遅延ロード（layoutOnly モードで processOCR が呼ばれた場合） */
-  private async ensureRecognizers(): Promise<void> {
+  private async ensureRecognizers(id?: string): Promise<void> {
     if (this.recognizer100) return  // rec100 があれば最低限OK
 
     if (this.layoutOnly) {
-      // モバイル: rec100 のみ（WASM ランタイムを 1 つに抑えるため）
-      const rec100Data = await loadModel('recognition100')
+      // モバイル: rec100 のみ（WASM ランタイムを 1 つに抑えるため）。
+      // モバイル回線ではダウンロードに時間がかかるため、進捗をUIに通知する
+      // （layout_detection が progress 0.1 から始まるので、それに合わせて 0〜0.1 の範囲を使う）
+      const rec100Data = await loadModel('recognition100', (p) => {
+        this.post({
+          type: 'OCR_PROGRESS',
+          id,
+          stage: 'loading_recognition_model',
+          progress: p * 0.1,
+          message: `Loading recognition model... ${Math.round(p * 100)}%`,
+        })
+      })
       this.recognizer100 = new TextRecognizer([1, 3, 24, 768])
       await this.recognizer100.initialize(rec100Data)
     } else {
@@ -159,7 +169,7 @@ class OCRWorker {
       if (!this.isInitialized) {
         await this.initialize()
       }
-      await this.ensureRecognizers()
+      await this.ensureRecognizers(id)
 
       // Stage 1: レイアウト検出
       this.post({

@@ -24,7 +24,7 @@ export const MODEL_URLS: Record<string, string> = {
 }
 
 function initDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
+  const dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION)
 
     request.onerror = () => reject(request.error)
@@ -43,27 +43,41 @@ function initDB(): Promise<IDBDatabase> {
       resultsStore.createIndex('by_createdAt', 'createdAt', { unique: false })
     }
   })
+
+  // iOS/iPadOS Safariには indexedDB.open のコールバックが永遠に発火しない既知のバグがあるため、
+  // 3秒でタイムアウトしてダウンロードにフォールバックできるようにする
+  const timeout = new Promise<IDBDatabase>((_, reject) => {
+    setTimeout(() => reject(new Error('indexedDB.open timed out')), 3000)
+  })
+
+  return Promise.race([dbPromise, timeout])
 }
 
 async function getModelFromCache(
   modelName: string
 ): Promise<ArrayBuffer | undefined> {
-  const db = await initDB()
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction([STORE_NAME], 'readonly')
-    const store = transaction.objectStore(STORE_NAME)
-    const request = store.get(modelName)
+  try {
+    const db = await initDB()
+    return await new Promise<ArrayBuffer | undefined>((resolve, reject) => {
+      const transaction = db.transaction([STORE_NAME], 'readonly')
+      const store = transaction.objectStore(STORE_NAME)
+      const request = store.get(modelName)
 
-    request.onerror = () => reject(request.error)
-    request.onsuccess = () => {
-      const entry = request.result
-      if (entry && entry.version === MODEL_VERSION) {
-        resolve(entry.data)
-      } else {
-        resolve(undefined)
+      request.onerror = () => reject(request.error)
+      request.onsuccess = () => {
+        const entry = request.result
+        if (entry && entry.version === MODEL_VERSION) {
+          resolve(entry.data)
+        } else {
+          resolve(undefined)
+        }
       }
-    }
-  })
+    })
+  } catch (error) {
+    // IndexedDBが使えない・タイムアウトした場合はキャッシュなし扱いにしてダウンロードへフォールバック
+    console.warn(`IndexedDB cache read failed for ${modelName}, falling back to download:`, error)
+    return undefined
+  }
 }
 
 async function saveModelToCache(
@@ -152,8 +166,13 @@ export async function loadModel(
   console.log(`Downloading model ${modelType} from ${modelUrl}`)
   const modelData = await downloadWithProgress(modelUrl, onProgress)
 
-  await saveModelToCache(modelType, modelData)
-  console.log(`Model ${modelType} cached successfully`)
+  // IndexedDBへの保存はawaitせずfire-and-forgetにする。
+  // iOS SafariのIDB openバグや40MB級書き込みの遅さで初期化がハングするのを防ぐため。
+  // 配信元（Cloudflare R2 / 自前配信）はCache-Control: immutable付きなので、
+  // IDBキャッシュが効かなくてもHTTPキャッシュで十分カバーできる。
+  saveModelToCache(modelType, modelData)
+    .then(() => console.log(`Model ${modelType} cached successfully`))
+    .catch((error) => console.warn(`Failed to cache model ${modelType} in IndexedDB:`, error))
 
   return modelData
 }
