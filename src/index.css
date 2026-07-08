@@ -702,6 +702,21 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .no-text { color: var(--color-text-secondary); font-style: italic; }
 
+/* OCR失敗ページのエラー詳細（スクリーンショットから原因特定できるよう小さめの等幅で表示） */
+.result-error-detail {
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--color-danger);
+  background: rgba(211, 47, 47, 0.06);
+  border: 1px solid rgba(211, 47, 47, 0.3);
+  border-radius: var(--radius);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
 .selected-text-label {
   font-size: 0.75rem;
   color: var(--color-text-secondary);

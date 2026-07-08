@@ -19,6 +19,25 @@ export function ResultPanel({ result, selectedBlock, onEditBlock, onMoveBlock, l
     )
   }
 
+  // 認識に失敗したページ：原因究明用にエラー詳細を表示する（textBlocksは空なので通常表示はしない）
+  if (result.error) {
+    return (
+      <div className="result-panel">
+        <div className="result-header">
+          <span className="result-filename">{result.fileName}</span>
+        </div>
+        <div className="result-text">
+          <p className="no-text">
+            {lang === 'ja' ? '認識に失敗しました（画像のみで書き出されます）' : 'Recognition failed (exported as image only)'}
+          </p>
+          {result.errorMessage && (
+            <pre className="result-error-detail">{result.errorMessage}</pre>
+          )}
+        </div>
+      </div>
+    )
+  }
+
   // 読み順に並べた行（そのまま編集できる一覧にする）
   const lines = [...result.textBlocks].sort((a, b) => a.readingOrder - b.readingOrder)
   const warnings = detectLineWarnings(lines)

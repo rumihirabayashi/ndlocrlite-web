@@ -296,10 +296,12 @@ class OCRWorker {
         folio,
       })
     } catch (error) {
+      // スクリーンショットだけで原因特定できるよう、エラー名とUAを1行付加する（initializeと同様）
+      const err = error as Error
       this.post({
         type: 'OCR_ERROR',
         id,
-        error: (error as Error).message,
+        error: `${err.message} [${err.name}] / UA: ${navigator.userAgent}`,
       })
     }
   }

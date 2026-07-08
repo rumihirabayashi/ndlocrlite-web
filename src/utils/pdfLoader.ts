@@ -3,7 +3,7 @@
  */
 
 import type { ProcessedImage } from '../types/ocr'
-import { makeThumbnailDataUrl } from './imageLoader'
+import { makeThumbnailDataUrl, MAX_PIXELS } from './imageLoader'
 import workerSrc from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 
 let pdfjsLib: typeof import('pdfjs-dist') | null = null
@@ -33,7 +33,11 @@ export async function pdfToProcessedImages(
     if (onProgress) onProgress(pageNum, totalPages)
 
     const page = await pdf.getPage(pageNum)
-    const viewport = page.getViewport({ scale })
+    // iOS Safariのcanvas面積上限（約16.7M画素）を安全マージン込みで超えないよう、
+    // 指定scaleでの面積がMAX_PIXELSを超える場合はscaleを縮小する（高dpiスキャンPDF対策）
+    const viewport1 = page.getViewport({ scale: 1 })
+    const effectiveScale = Math.min(scale, Math.sqrt(MAX_PIXELS / (viewport1.width * viewport1.height)))
+    const viewport = page.getViewport({ scale: effectiveScale })
 
     const canvas = document.createElement('canvas')
     canvas.width = viewport.width

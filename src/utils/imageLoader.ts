@@ -7,6 +7,16 @@ import type { ProcessedImage } from '../types/ocr'
 
 const THUMBNAIL_MAX_WIDTH = 200
 
+/**
+ * 読み込み画像の解像度上限（画素数）。
+ * iOS SafariはCanvasの面積が約16,777,216画素（4096×4096相当）を超えると、
+ * 例外を出さずに黙って描画・取得に失敗する（スキャン書籍の300〜600dpi画像は容易に超える）。
+ * そのため安全マージンを見て12,000,000画素に制限する。
+ * OCRのレイアウト検出は1024×1024・行認識のcropは高さ24px固定で処理するため、
+ * 12MP程度に縮小しても認識品質への影響は小さい。
+ */
+export const MAX_PIXELS = 12_000_000
+
 export function isTiffFile(file: File): boolean {
   if (file.type === 'image/tiff') return true
   const ext = file.name.toLowerCase().split('.').pop()
@@ -41,7 +51,9 @@ export async function tiffToProcessedImages(file: File): Promise<ProcessedImage[
     const w = ifds[i].width
     const h = ifds[i].height
     const rgba = UTIF.toRGBA8(ifds[i])
-    const imageData = new ImageData(new Uint8ClampedArray(rgba), w, h)
+    // 12MP超はここで縮小する。canvas経由で縮小するとフルサイズのcanvasが一旦必要になり
+    // iOS Safariの上限に引っかかるため、canvasを使わない純JSのボックスサンプリングで縮小する。
+    const imageData = downscaleImageData(new ImageData(new Uint8ClampedArray(rgba), w, h), MAX_PIXELS)
     const thumbnailDataUrl = makeThumbnailDataUrl(imageData)
     results.push({
       fileName: file.name,
@@ -72,13 +84,18 @@ async function blobToImageData(blob: Blob, name: string): Promise<ImageData> {
     const img = new Image()
     const url = URL.createObjectURL(blob)
     img.onload = () => {
+      // canvasはMAX_PIXELS以下になるよう縮小サイズで作る（フルサイズのcanvasは絶対に作らない。
+      // imgオブジェクト自体が大きいのは問題ない＝縮小描画するだけ）
+      const scale = Math.min(1, Math.sqrt(MAX_PIXELS / (img.width * img.height)))
+      const w = Math.max(1, Math.round(img.width * scale))
+      const h = Math.max(1, Math.round(img.height * scale))
       const canvas = document.createElement('canvas')
-      canvas.width = img.width
-      canvas.height = img.height
+      canvas.width = w
+      canvas.height = h
       const ctx = canvas.getContext('2d')!
-      ctx.drawImage(img, 0, 0)
+      ctx.drawImage(img, 0, 0, w, h)
       URL.revokeObjectURL(url)
-      resolve(ctx.getImageData(0, 0, canvas.width, canvas.height))
+      resolve(ctx.getImageData(0, 0, w, h))
     }
     img.onerror = () => {
       URL.revokeObjectURL(url)
@@ -94,13 +111,18 @@ async function standardImageToImageData(file: File): Promise<ImageData> {
     const url = URL.createObjectURL(file)
 
     img.onload = () => {
+      // canvasはMAX_PIXELS以下になるよう縮小サイズで作る（フルサイズのcanvasは絶対に作らない。
+      // imgオブジェクト自体が大きいのは問題ない＝縮小描画するだけ）
+      const scale = Math.min(1, Math.sqrt(MAX_PIXELS / (img.width * img.height)))
+      const w = Math.max(1, Math.round(img.width * scale))
+      const h = Math.max(1, Math.round(img.height * scale))
       const canvas = document.createElement('canvas')
-      canvas.width = img.width
-      canvas.height = img.height
+      canvas.width = w
+      canvas.height = h
       const ctx = canvas.getContext('2d')!
-      ctx.drawImage(img, 0, 0)
+      ctx.drawImage(img, 0, 0, w, h)
       URL.revokeObjectURL(url)
-      resolve(ctx.getImageData(0, 0, canvas.width, canvas.height))
+      resolve(ctx.getImageData(0, 0, w, h))
     }
 
     img.onerror = () => {
@@ -112,6 +134,55 @@ async function standardImageToImageData(file: File): Promise<ImageData> {
   })
 }
 
+/**
+ * ImageDataを純JSのボックスサンプリングで縮小する（canvasを使わない）。
+ * TIFFはUTIFでcanvasを経由せず直接RGBA配列が得られるため、ここで縮小しないと
+ * 後段（makeThumbnailDataUrl等）でフルサイズのcanvasが必要になりiOSで黙って失敗する。
+ * maxPixels以下ならそのまま返す。
+ */
+export function downscaleImageData(imageData: ImageData, maxPixels: number): ImageData {
+  const { width, height, data } = imageData
+  if (width * height <= maxPixels) return imageData
+
+  const scale = Math.sqrt(maxPixels / (width * height))
+  const newW = Math.max(1, Math.round(width * scale))
+  const newH = Math.max(1, Math.round(height * scale))
+  const dst = new Uint8ClampedArray(newW * newH * 4)
+
+  // 出力ピクセルごとに、対応する元画像の矩形範囲（ボックス）内のRGBAを平均する
+  for (let dy = 0; dy < newH; dy++) {
+    const sy0 = Math.floor((dy * height) / newH)
+    const sy1 = Math.max(sy0 + 1, Math.floor(((dy + 1) * height) / newH))
+    for (let dx = 0; dx < newW; dx++) {
+      const sx0 = Math.floor((dx * width) / newW)
+      const sx1 = Math.max(sx0 + 1, Math.floor(((dx + 1) * width) / newW))
+
+      let r = 0, g = 0, b = 0, a = 0, count = 0
+      for (let sy = sy0; sy < sy1; sy++) {
+        let offset = (sy * width + sx0) * 4
+        for (let sx = sx0; sx < sx1; sx++) {
+          r += data[offset]
+          g += data[offset + 1]
+          b += data[offset + 2]
+          a += data[offset + 3]
+          offset += 4
+          count++
+        }
+      }
+
+      const dstOffset = (dy * newW + dx) * 4
+      dst[dstOffset] = r / count
+      dst[dstOffset + 1] = g / count
+      dst[dstOffset + 2] = b / count
+      dst[dstOffset + 3] = a / count
+    }
+  }
+
+  return new ImageData(dst, newW, newH)
+}
+
+// 前提：ここに渡るimageDataは呼び出し元（fileToImageData / tiffToProcessedImages / pdfToProcessedImages）
+// で既にMAX_PIXELS以下に縮小済み。そのためsrcCanvasをフルサイズで作ってもiOSのcanvas上限を超えない。
 export function makeThumbnailDataUrl(imageData: ImageData): string {
   const scale = Math.min(1, THUMBNAIL_MAX_WIDTH / imageData.width)
   const w = Math.round(imageData.width * scale)

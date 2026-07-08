@@ -42,7 +42,7 @@ function dataUrlToImageData(dataUrl: string): Promise<ImageData> {
 export default function App() {
   const { lang, toggleLanguage } = useI18n()
   const { isReady, jobState, processImage, resetState } = useOCRWorker()
-  const { processedImages, isLoading: isLoadingFiles, processFiles, clearImages, fileLoadingState, restoreImages } = useFileProcessor()
+  const { processedImages, isLoading: isLoadingFiles, error: fileError, processFiles, clearImages, clearError, fileLoadingState, restoreImages } = useFileProcessor()
   const { runs: historyRuns, saveRun, clearResults } = useResultCache()
 
   const [sessionResults, setSessionResults] = useState<OCRResult[]>([])
@@ -302,6 +302,7 @@ export default function App() {
             processingTimeMs: 0,
             createdAt: runCreatedAt,
             error: true,
+            errorMessage: (err as Error).message,
           })
         }
         setSessionResults([...sessionResultsAccum])
@@ -447,6 +448,16 @@ export default function App() {
   if (isLanding) {
     return (
       <div className="app">
+        {fileError && (
+          <div className="draft-banner ocr-fail-banner file-error-banner lens-draft-banner">
+            <span className="draft-banner-text">{fileError}</span>
+            <div className="draft-banner-actions">
+              <button className="btn btn-secondary" onClick={clearError}>
+                {lang === 'ja' ? '閉じる' : 'Dismiss'}
+              </button>
+            </div>
+          </div>
+        )}
         {draftToRestore && (
           <div className="draft-banner lens-draft-banner">
             <span className="draft-banner-text">
@@ -490,6 +501,16 @@ export default function App() {
       />
 
       <main className="main">
+        {fileError && (
+          <div className="draft-banner ocr-fail-banner file-error-banner">
+            <span className="draft-banner-text">{fileError}</span>
+            <div className="draft-banner-actions">
+              <button className="btn btn-secondary" onClick={clearError}>
+                {lang === 'ja' ? '閉じる' : 'Dismiss'}
+              </button>
+            </div>
+          </div>
+        )}
         {draftToRestore && !hasResults && !isWorking && (
           <div className="draft-banner">
             <span className="draft-banner-text">

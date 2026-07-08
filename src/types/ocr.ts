@@ -39,6 +39,7 @@ export interface OCRResult {
   pageBlocks?: PageBlock[] // DEIMが検出した段・カラム境界
   folio?: string // ノンブル（書籍の印刷ページ番号）。OCRで検出できた場合のみ。実験的・不確実
   error?: boolean // 認識に失敗したページのプレースホルダ（textBlocks は空）。画像のみで書き出す
+  errorMessage?: string // 失敗理由（スクリーンショットからの原因特定用）
 }
 
 export interface ProcessedImage {
