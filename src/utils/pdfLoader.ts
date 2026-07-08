@@ -4,13 +4,15 @@
 
 import type { ProcessedImage } from '../types/ocr'
 import { makeThumbnailDataUrl, MAX_PIXELS } from './imageLoader'
-import workerSrc from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+// legacyビルドを使う：通常ビルドはPromise.withResolvers等の新API前提でSafari 17.4未満
+// （iPadOS 17.0〜17.3等）だと読み込み時に失敗する。legacyはpolyfill同梱
+import workerSrc from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 
 let pdfjsLib: typeof import('pdfjs-dist') | null = null
 
 async function getPdfJs() {
   if (!pdfjsLib) {
-    pdfjsLib = await import('pdfjs-dist')
+    pdfjsLib = (await import('pdfjs-dist/legacy/build/pdf.mjs')) as unknown as typeof import('pdfjs-dist')
     // Viteがバンドルしたハッシュ付きURLを使用（CDN不要・COEP対応）
     pdfjsLib.GlobalWorkerOptions.workerSrc = workerSrc
   }
