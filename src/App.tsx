@@ -203,6 +203,12 @@ export default function App() {
     [sessionResults]
   )
 
+  // 認識失敗バナーに出す診断用エラー詳細（最初に失敗した1件のメッセージのみ表示）
+  const firstFailedErrorMessage = useMemo(
+    () => sessionResults.find((r) => r.error && r.errorMessage)?.errorMessage ?? null,
+    [sessionResults]
+  )
+
   const selectedPageBlockText = useMemo(() => {
     if (!selectedPageBlock || !currentResult) return null
     const cx = (b: TextBlock) => b.x + b.width / 2
@@ -296,7 +302,8 @@ export default function App() {
           sessionResultsAccum.push({
             id: `${runId}-${i}`,
             fileName: image.pageIndex ? `${image.fileName} (p.${image.pageIndex})` : image.fileName,
-            imageDataUrl: image.thumbnailDataUrl,
+            // 失敗ページのプレビューはサムネイル（幅200px）だと読めないため、フル解像度画像を使う
+            imageDataUrl: getFullUrl(i, image),
             textBlocks: [],
             fullText: '',
             processingTimeMs: 0,
@@ -710,6 +717,10 @@ export default function App() {
                       {lang === 'ja' ? '閉じる' : 'Dismiss'}
                     </button>
                   </div>
+                  {/* 診断用：最初に失敗した1件のエラー詳細（スクショに写らないため画面下に出す） */}
+                  {firstFailedErrorMessage && (
+                    <div className="result-error-detail">{firstFailedErrorMessage}</div>
+                  )}
                 </div>
               )}
 

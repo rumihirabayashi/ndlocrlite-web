@@ -15,7 +15,7 @@
  */
 
 import './onnx-config'
-import { loadModel } from './model-loader'
+import { loadModel, clearModelCache } from './model-loader'
 import { LayoutDetector } from './layout-detector'
 import { TextRecognizer } from './text-recognizer'
 import { ReadingOrderProcessor, extractFolio, type Orientation } from './reading-order'
@@ -141,9 +141,12 @@ class OCRWorker {
         message: 'Ready',
       })
     } catch (error) {
+      // 壊れたモデルキャッシュが原因で初期化に失敗し続けるループを断ち切るため、
+      // IndexedDBのモデルキャッシュを破棄する（失敗しても握りつぶす）
+      clearModelCache().catch(() => {})
       // スクリーンショットだけで原因特定できるよう、エラー名とUAを1行付加する
       const err = error as Error
-      const diagnosticMessage = `${err.message} [${err.name}] / UA: ${navigator.userAgent}`
+      const diagnosticMessage = `${err.message} [${err.name}] / UA: ${navigator.userAgent}（モデルキャッシュを破棄しました。ページを再読み込みすると再ダウンロードされます）`
       this.post({
         type: 'OCR_ERROR',
         error: diagnosticMessage,
@@ -157,35 +160,43 @@ class OCRWorker {
   private async ensureRecognizers(id?: string): Promise<void> {
     if (this.recognizer100) return  // rec100 があれば最低限OK
 
-    if (this.layoutOnly) {
-      // モバイル: rec100 のみ（WASM ランタイムを 1 つに抑えるため）。
-      // モバイル回線ではダウンロードに時間がかかるため、進捗をUIに通知する
-      // （layout_detection が progress 0.1 から始まるので、それに合わせて 0〜0.1 の範囲を使う）
-      const rec100Data = await loadModel('recognition100', (p) => {
-        this.post({
-          type: 'OCR_PROGRESS',
-          id,
-          stage: 'loading_recognition_model',
-          progress: p * 0.1,
-          message: `Loading recognition model... ${Math.round(p * 100)}%`,
+    try {
+      if (this.layoutOnly) {
+        // モバイル: rec100 のみ（WASM ランタイムを 1 つに抑えるため）。
+        // モバイル回線ではダウンロードに時間がかかるため、進捗をUIに通知する
+        // （layout_detection が progress 0.1 から始まるので、それに合わせて 0〜0.1 の範囲を使う）
+        const rec100Data = await loadModel('recognition100', (p) => {
+          this.post({
+            type: 'OCR_PROGRESS',
+            id,
+            stage: 'loading_recognition_model',
+            progress: p * 0.1,
+            message: `Loading recognition model... ${Math.round(p * 100)}%`,
+          })
         })
-      })
-      this.recognizer100 = new TextRecognizer([1, 3, 24, 768])
-      await this.recognizer100.initialize(rec100Data)
-    } else {
-      // デスクトップ: 3モデル全部
-      if (this.recognizer30 && this.recognizer50) return
-      const [rec30Data, rec50Data, rec100Data] = await Promise.all([
-        loadModel('recognition30'),
-        loadModel('recognition50'),
-        loadModel('recognition100'),
-      ])
-      this.recognizer30 = new TextRecognizer([1, 3, 24, 256])
-      await this.recognizer30.initialize(rec30Data)
-      this.recognizer50 = new TextRecognizer([1, 3, 24, 384])
-      await this.recognizer50.initialize(rec50Data)
-      this.recognizer100 = new TextRecognizer([1, 3, 24, 768])
-      await this.recognizer100.initialize(rec100Data)
+        this.recognizer100 = new TextRecognizer([1, 3, 24, 768])
+        await this.recognizer100.initialize(rec100Data)
+      } else {
+        // デスクトップ: 3モデル全部
+        if (this.recognizer30 && this.recognizer50) return
+        const [rec30Data, rec50Data, rec100Data] = await Promise.all([
+          loadModel('recognition30'),
+          loadModel('recognition50'),
+          loadModel('recognition100'),
+        ])
+        this.recognizer30 = new TextRecognizer([1, 3, 24, 256])
+        await this.recognizer30.initialize(rec30Data)
+        this.recognizer50 = new TextRecognizer([1, 3, 24, 384])
+        await this.recognizer50.initialize(rec50Data)
+        this.recognizer100 = new TextRecognizer([1, 3, 24, 768])
+        await this.recognizer100.initialize(rec100Data)
+      }
+    } catch (error) {
+      // initialize() 同様、壊れたキャッシュによる失敗ループを断ち切るためキャッシュを破棄する
+      clearModelCache().catch(() => {})
+      const err = error as Error
+      err.message = `${err.message}（モデルキャッシュを破棄しました。ページを再読み込みすると再ダウンロードされます）`
+      throw err
     }
   }
 
