@@ -72,6 +72,9 @@ export function useOCRWorker() {
             modelProgress: msg.modelProgress,
           }))
         }
+      } else if (msg.type === 'OCR_ERROR') {
+        // 初期化中のエラーを画面に表示する（従来はここで無視されて進捗バーが固まったまま見えていた）
+        setJobState((prev) => ({ ...prev, status: 'error', errorMessage: msg.error }))
       }
     }
 

@@ -22,6 +22,24 @@ import { ReadingOrderProcessor, extractFolio, type Orientation } from './reading
 import type { TextBlock } from '../types/ocr'
 import type { WorkerInMessage, WorkerOutMessage } from '../types/worker'
 
+/** wasm-feature-detect と同じ手法でWebAssembly SIMD対応を検出する（onnxruntime-web 1.20はSIMD必須） */
+function isWasmSimdSupported(): boolean {
+  return WebAssembly.validate(new Uint8Array([
+    0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 96, 0, 1, 123, 3, 2, 1, 0, 10, 10, 1, 8, 0, 65, 0, 253, 15, 253, 98, 11,
+  ]))
+}
+
+/** Promise に120秒のタイムアウトを付与する（ONNXセッション作成が例外を投げずにハングするケースに備える） */
+function withTimeout<T>(promise: Promise<T>, ms: number, timeoutMessage: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(timeoutMessage)), ms)
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value) },
+      (error) => { clearTimeout(timer); reject(error) }
+    )
+  })
+}
+
 class OCRWorker {
   private layoutDetector: LayoutDetector | null = null
   private recognizer30: TextRecognizer | null = null  // ≤30文字 [1,3,16,256]
@@ -40,6 +58,11 @@ class OCRWorker {
     this.layoutOnly = layoutOnly
 
     try {
+      // モデルダウンロード前にWASM SIMD対応を確認（非対応環境ではこの先ハング/失敗するため先に検出する）
+      if (!isWasmSimdSupported()) {
+        throw new Error('この端末のブラウザはWebAssembly SIMDに対応していません。iPadOS/iOSを16.4以降に更新してください。(WebAssembly SIMD not supported)')
+      }
+
       this.post({
         type: 'OCR_PROGRESS',
         stage: 'initializing',
@@ -60,7 +83,12 @@ class OCRWorker {
         })
         this.post({ type: 'OCR_PROGRESS', stage: 'initializing_models', progress: 0.76, message: 'Preparing layout model...' })
         this.layoutDetector = new LayoutDetector()
-        await this.layoutDetector.initialize(layoutModelData)
+        // ONNXセッション作成が例外を投げずに永久にハングする可能性があるため120秒でタイムアウトさせる
+        await withTimeout(
+          this.layoutDetector.initialize(layoutModelData),
+          120_000,
+          'モデルの準備がタイムアウトしました（WASM初期化に失敗の可能性）'
+        )
       } else {
         // デスクトップ: 4モデルを並列ダウンロード（各モデルの進捗を合算してレポート）
         const progresses = { layout: 0, rec30: 0, rec50: 0, rec100: 0 }
@@ -82,10 +110,14 @@ class OCRWorker {
           loadModel('recognition100',(p) => { progresses.rec100 = p; reportProgress() }),
         ])
 
-        // ONNXセッション作成（WASMシングルスレッドのため直列）
+        // ONNXセッション作成（WASMシングルスレッドのため直列）。永久ハング対策で120秒タイムアウトを設ける
         this.post({ type: 'OCR_PROGRESS', stage: 'initializing_models', progress: 0.76, message: 'Preparing layout model...' })
         this.layoutDetector = new LayoutDetector()
-        await this.layoutDetector.initialize(layoutModelData)
+        await withTimeout(
+          this.layoutDetector.initialize(layoutModelData),
+          120_000,
+          'モデルの準備がタイムアウトしました（WASM初期化に失敗の可能性）'
+        )
 
         this.post({ type: 'OCR_PROGRESS', stage: 'initializing_models', progress: 0.83, message: 'Preparing recognition model (30)...' })
         this.recognizer30 = new TextRecognizer([1, 3, 24, 256])
@@ -109,9 +141,12 @@ class OCRWorker {
         message: 'Ready',
       })
     } catch (error) {
+      // スクリーンショットだけで原因特定できるよう、エラー名とUAを1行付加する
+      const err = error as Error
+      const diagnosticMessage = `${err.message} [${err.name}] / UA: ${navigator.userAgent}`
       this.post({
         type: 'OCR_ERROR',
-        error: (error as Error).message,
+        error: diagnosticMessage,
         stage: 'initialization',
       })
       throw error

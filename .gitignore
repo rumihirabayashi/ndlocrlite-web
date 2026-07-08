@@ -26,3 +26,6 @@ _models_local_backup/
 *.sln
 *.sw?
 
+
+# Local Netlify folder
+.netlify
