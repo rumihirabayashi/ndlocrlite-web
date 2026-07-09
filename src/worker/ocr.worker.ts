@@ -42,6 +42,30 @@ function withTimeout<T>(promise: Promise<T>, ms: number, timeoutMessage: string)
 }
 
 /**
+ * ONNXセッション作成（initFn）を実行し、失敗したらモデルキャッシュを破棄→強制再ダウンロードで1回だけリトライする。
+ * iPadOS 17でIndexedDBから読み戻した40MB級モデルが破損しているケース（iOS Safari既知バグ）で、
+ * 「Can't create a session ... ResolveKernelTypeStr ...」のような深部エラーになるのを自己修復するための仕組み。
+ * 初回データ（キャッシュ or 通常ダウンロード）はすでに呼び出し元で取得済みのものを渡す想定。
+ */
+async function initializeWithRetry(
+  label: string,
+  initialData: ArrayBuffer,
+  initFn: (data: ArrayBuffer) => Promise<void>,
+  reloadFresh: () => Promise<ArrayBuffer>,
+  onRetry: () => void
+): Promise<void> {
+  try {
+    await initFn(initialData)
+  } catch (error) {
+    console.warn(`Failed to create ONNX session for ${label}, discarding model cache and retrying with a fresh download:`, error)
+    await clearModelCache().catch(() => {})
+    onRetry()
+    const freshData = await reloadFresh()
+    await initFn(freshData)
+  }
+}
+
+/**
  * OOM系エラー（iOS 17のWASMメモリ予約リークが原因のことが多い）に対し、
  * 復旧手順の案内をメッセージ先頭に付加する。再読み込みでは解消せず、
  * タブを閉じて開き直す必要があるのが特徴（onnxruntime-web 1.19以降のpthreadビルドが
@@ -103,11 +127,23 @@ class OCRWorker {
         })
         this.post({ type: 'OCR_PROGRESS', stage: 'initializing_models', progress: 0.76, message: 'Preparing layout model...' })
         this.layoutDetector = new LayoutDetector()
-        // ONNXセッション作成が例外を投げずに永久にハングする可能性があるため120秒でタイムアウトさせる
-        await withTimeout(
-          this.layoutDetector.initialize(layoutModelData),
-          120_000,
-          'モデルの準備がタイムアウトしました（WASM初期化に失敗の可能性）'
+        // ONNXセッション作成が例外を投げずに永久にハングする可能性があるため120秒でタイムアウトさせる。
+        // 失敗時はキャッシュ破棄＋強制再ダウンロードで1回だけリトライする（モバイル経路のみ）
+        await initializeWithRetry(
+          'layout model',
+          layoutModelData,
+          (data) => withTimeout(
+            this.layoutDetector!.initialize(data),
+            120_000,
+            'モデルの準備がタイムアウトしました（WASM初期化に失敗の可能性）'
+          ),
+          () => loadModel('layout', undefined, { forceFresh: true }),
+          () => this.post({
+            type: 'OCR_PROGRESS',
+            stage: 'initializing_models',
+            progress: 0.76,
+            message: 'Retrying with fresh model download...',
+          })
         )
       } else {
         // デスクトップ: 4モデルを並列ダウンロード（各モデルの進捗を合算してレポート）
@@ -195,7 +231,20 @@ class OCRWorker {
           })
         })
         this.recognizer100 = new TextRecognizer([1, 3, 24, 768])
-        await this.recognizer100.initialize(rec100Data)
+        // 失敗時はキャッシュ破棄＋強制再ダウンロードで1回だけリトライする
+        await initializeWithRetry(
+          'recognition100 model',
+          rec100Data,
+          (data) => this.recognizer100!.initialize(data),
+          () => loadModel('recognition100', undefined, { forceFresh: true }),
+          () => this.post({
+            type: 'OCR_PROGRESS',
+            id,
+            stage: 'loading_recognition_model',
+            progress: 0.1,
+            message: 'Retrying with fresh model download...',
+          })
+        )
       } else {
         // デスクトップ: 3モデル全部
         if (this.recognizer30 && this.recognizer50) return

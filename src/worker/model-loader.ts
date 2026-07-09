@@ -23,6 +23,24 @@ export const MODEL_URLS: Record<string, string> = {
   recognition100: `${MODEL_BASE_URL}/parseq-100.onnx`, // カテゴリ1: ≤100文字 [1,3,24,768]
 }
 
+// FNV-1a (32bit) ハッシュの初期値・素数
+const FNV_OFFSET_BASIS = 0x811c9dc5
+const FNV_PRIME = 0x01000193
+
+/**
+ * FNV-1a (32bit) ハッシュ。IndexedDBから読み戻したモデルデータの破損検出に使う
+ * （iPadOS 17でIndexedDBの値が壊れて返ってくる既知バグへの対策）。
+ * 40MB級のUint8Arrayでも数十ms程度で計算できるため、キャッシュ読み書きのたびに実行して問題ない。
+ */
+function fnv1aHash(data: Uint8Array): number {
+  let hash = FNV_OFFSET_BASIS
+  for (let i = 0; i < data.length; i++) {
+    hash ^= data[i]
+    hash = Math.imul(hash, FNV_PRIME)
+  }
+  return hash >>> 0
+}
+
 function initDB(): Promise<IDBDatabase> {
   const dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION)
@@ -53,26 +71,60 @@ function initDB(): Promise<IDBDatabase> {
   return Promise.race([dbPromise, timeout])
 }
 
+/** 破損の疑いがあるキャッシュエントリの削除を試みる（失敗しても握りつぶす） */
+async function deleteModelFromCache(modelName: string): Promise<void> {
+  const db = await initDB()
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction([STORE_NAME], 'readwrite')
+    const store = transaction.objectStore(STORE_NAME)
+    const request = store.delete(modelName)
+
+    request.onerror = () => reject(request.error)
+    request.onsuccess = () => resolve()
+  })
+}
+
 async function getModelFromCache(
   modelName: string
 ): Promise<ArrayBuffer | undefined> {
   try {
     const db = await initDB()
-    return await new Promise<ArrayBuffer | undefined>((resolve, reject) => {
+    const entry = await new Promise<
+      { data: ArrayBuffer; version: string; size?: number; hash?: number } | undefined
+    >((resolve, reject) => {
       const transaction = db.transaction([STORE_NAME], 'readonly')
       const store = transaction.objectStore(STORE_NAME)
       const request = store.get(modelName)
 
       request.onerror = () => reject(request.error)
-      request.onsuccess = () => {
-        const entry = request.result
-        if (entry && entry.version === MODEL_VERSION) {
-          resolve(entry.data)
-        } else {
-          resolve(undefined)
-        }
-      }
+      request.onsuccess = () => resolve(request.result)
     })
+
+    if (!entry || entry.version !== MODEL_VERSION) {
+      return undefined
+    }
+
+    // 旧形式（size/hash未記録）のエントリは整合性チェックできないためキャッシュミス扱いにする
+    if (typeof entry.size !== 'number' || typeof entry.hash !== 'number') {
+      return undefined
+    }
+
+    // 破損キャッシュ検出: サイズとFNV-1aハッシュを再計算して保存時の値と照合する
+    // （iPadOS 17でIndexedDBから読み戻した40MB級モデルが壊れている疑いへの対策）
+    const bytes = new Uint8Array(entry.data)
+    if (bytes.byteLength !== entry.size || fnv1aHash(bytes) !== entry.hash) {
+      console.warn(
+        `Cached model ${modelName} failed integrity check (size/hash mismatch), discarding and falling back to download`
+      )
+      try {
+        await deleteModelFromCache(modelName)
+      } catch {
+        // 削除失敗は握りつぶす（次回保存時にどのみち上書きされる）
+      }
+      return undefined
+    }
+
+    return entry.data
   } catch (error) {
     // IndexedDBが使えない・タイムアウトした場合はキャッシュなし扱いにしてダウンロードへフォールバック
     console.warn(`IndexedDB cache read failed for ${modelName}, falling back to download:`, error)
@@ -85,6 +137,8 @@ async function saveModelToCache(
   data: ArrayBuffer
 ): Promise<void> {
   const db = await initDB()
+  const bytes = new Uint8Array(data)
+  const hash = fnv1aHash(bytes)
   return new Promise((resolve, reject) => {
     const transaction = db.transaction([STORE_NAME], 'readwrite')
     const store = transaction.objectStore(STORE_NAME)
@@ -93,6 +147,8 @@ async function saveModelToCache(
       data,
       cachedAt: Date.now(),
       version: MODEL_VERSION,
+      size: bytes.byteLength,
+      hash,
     })
 
     request.onerror = () => reject(request.error)
@@ -149,21 +205,25 @@ async function downloadWithProgress(
 
 export async function loadModel(
   modelType: string,
-  onProgress?: (progress: number) => void
+  onProgress?: (progress: number) => void,
+  opts?: { forceFresh?: boolean }
 ): Promise<ArrayBuffer> {
   const modelUrl = MODEL_URLS[modelType]
   if (!modelUrl) {
     throw new Error(`Unknown model type: ${modelType}`)
   }
 
-  const cached = await getModelFromCache(modelType)
-  if (cached) {
-    console.log(`Model ${modelType} loaded from cache`)
-    if (onProgress) onProgress(1.0)
-    return cached
+  // forceFresh時はキャッシュを読まず必ずダウンロードする（破損キャッシュからのリトライ用）
+  if (!opts?.forceFresh) {
+    const cached = await getModelFromCache(modelType)
+    if (cached) {
+      console.log(`Model ${modelType} loaded from cache`)
+      if (onProgress) onProgress(1.0)
+      return cached
+    }
   }
 
-  console.log(`Downloading model ${modelType} from ${modelUrl}`)
+  console.log(`Downloading model ${modelType} from ${modelUrl}${opts?.forceFresh ? ' (forced fresh download)' : ''}`)
   const modelData = await downloadWithProgress(modelUrl, onProgress)
 
   // IndexedDBへの保存はawaitせずfire-and-forgetにする。
