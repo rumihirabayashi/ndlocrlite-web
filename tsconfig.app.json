@@ -7,6 +7,11 @@
     "module": "ESNext",
     "types": ["vite/client"],
     "skipLibCheck": true,
+    /* onnxruntime-web 1.21.1はexportsにtypes条件がなくbundler解決で型が見えないため明示マップ */
+    "paths": {
+      "onnxruntime-web": ["./node_modules/onnxruntime-web/types.d.ts"],
+      "onnxruntime-web/wasm": ["./node_modules/onnxruntime-web/types.d.ts"]
+    },
 
     /* Bundler mode */
     "moduleResolution": "bundler",

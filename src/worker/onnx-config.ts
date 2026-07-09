@@ -6,10 +6,12 @@
  * Viteの?url importでWASMのハッシュ付きURLを取得し、
  * CDN不要・COEP対応の同一オリジン配信を実現する
  *
- * バージョンは 1.24.3 を使用（1.18固定にはしない）。
- * 1.18ではNDLOCRのDEIMモデルが動かない（検証済み・出力が空になる）ため不可。
+ * バージョンは 1.21.1 に固定。iPadOS 17.1実機で 1.24.3 は文字認識モデルの
+ * セッション作成が「ResolveKernelTypeStr ... ConstantOfShape」で失敗した
+ * （旧WebKitのWASM実行問題の疑い）。onnxruntime#22086 に
+ * 「1.21.1はiOSで動くが1.22.0から壊れた」との報告があり、それに合わせた。
  *
- * ただし1.19以降はpthreadビルドのみ同梱されており、初期化時に
+ * 1.19以降はpthreadビルドのみ同梱されており、初期化時に
  * `WebAssembly.Memory({initial:256, maximum:65536, shared:true})`＝最大4GBの
  * 共有メモリを予約する。iOS 17のWebKitにはページ再読み込み時にこの予約が
  * 解放されないバグがあり（emscripten#19374・onnxruntime#22086、iOS 18で修正済み）、
@@ -19,7 +21,10 @@
  */
 
 import * as ort from 'onnxruntime-web/wasm'
-import wasmUrl from 'onnxruntime-web/ort-wasm-simd-threaded.wasm?url'
+// 1.21.1はexportsでwasm/mjsファイルを公開していないため相対パスで直接import。
+// 1.21系はwasm本体に加えJSグルー（.mjs）のURLも明示しないとWorker内のdynamic importが失敗する
+import wasmUrl from '../../node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm?url'
+import mjsUrl from '../../node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.mjs?url'
 
 /** clampWasmMemoryForMobile() の二重パッチ防止フラグ（モジュールスコープ） */
 let isWasmMemoryClamped = false
@@ -57,7 +62,7 @@ export function clampWasmMemoryForMobile(): void {
 
 function initializeONNX() {
   // Viteがバンドルしたハッシュ付きURLを指定（CDN不要・COEP対応）
-  ort.env.wasm.wasmPaths = { wasm: wasmUrl }
+  ort.env.wasm.wasmPaths = { wasm: wasmUrl, mjs: mjsUrl }
 
   // シングルスレッドで安定動作
   ort.env.wasm.numThreads = 1
