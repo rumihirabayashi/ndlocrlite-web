@@ -2,12 +2,11 @@
   publish = "dist"
   command = "npm run build"
 
-# SharedArrayBufferに必要なCOOP/COEPヘッダーを全リクエストに付与
+# COOP/COEPは付けない（numThreads=1でSharedArrayBuffer不使用。
+# クロスオリジン分離が有効だと旧iOS WebKitの共有メモリ成長バグで推論に失敗する）
 [[headers]]
   for = "/*"
   [headers.values]
-    Cross-Origin-Opener-Policy = "same-origin"
-    Cross-Origin-Embedder-Policy = "require-corp"
     # 検索エンジンに載せない（URLを知る人だけがアクセスする非公開運用）
     X-Robots-Tag = "noindex, nofollow"
 

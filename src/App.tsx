@@ -55,6 +55,8 @@ export default function App() {
   const [isReadyToProcess, setIsReadyToProcess] = useState(false)
   // 認識に失敗したページ番号（1始まり）。処理完了後の通知バナー表示用
   const [failedPageNumbers, setFailedPageNumbers] = useState<number[]>([])
+  // 連続失敗により処理を中断したか（診断バナーに追記するため）
+  const [stoppedEarly, setStoppedEarly] = useState(false)
   const [pendingImageIndex, setPendingImageIndex] = useState(0)
   // 組み方向（認識の読み順とPDF書き出しの両方に反映）
   const [orientation, setOrientation] = useState<Orientation>('auto')
@@ -182,6 +184,7 @@ export default function App() {
     setSessionResults(results)
     setSelectedResultIndex(0)
     setFailedPageNumbers([])
+    setStoppedEarly(false)
     setCurrentRunId(d.id)
     savedImagesRunRef.current = d.id // 画像は既にDBにあるので再保存しない
     setDraftToRestore(null)
@@ -281,6 +284,7 @@ export default function App() {
       setSessionResults([])
       setSelectedResultIndex(0)
       setFailedPageNumbers([])
+      setStoppedEarly(false)
       resetState()
 
       const runId = crypto.randomUUID()
@@ -290,15 +294,21 @@ export default function App() {
       // 失敗ページはスキップせず、空のエラープレースホルダを同じ添字に入れる。
       const sessionResultsAccum: OCRResult[] = []
       const failedPages: number[] = []
+      // 先頭からの連続失敗回数。iPadでの初期化失敗などは毎ページ同じエラーになるため、
+      // 18ページ全部待たなくても早期に気づけるよう、一定回数連続したら処理を打ち切る。
+      let consecutiveFailures = 0
+      const CONSECUTIVE_FAILURE_LIMIT = 3
 
       for (let i = 0; i < processedImages.length; i++) {
         const image = processedImages[i]
         try {
           const result = await processImage(image, i, processedImages.length, orientation)
           sessionResultsAccum.push(result)
+          consecutiveFailures = 0
         } catch (err) {
           console.error(`OCR failed for ${image.fileName}:`, err)
           failedPages.push(i + 1)
+          consecutiveFailures++
           sessionResultsAccum.push({
             id: `${runId}-${i}`,
             fileName: image.pageIndex ? `${image.fileName} (p.${image.pageIndex})` : image.fileName,
@@ -314,6 +324,31 @@ export default function App() {
         }
         setSessionResults([...sessionResultsAccum])
         setSelectedResultIndex(sessionResultsAccum.length - 1)
+        // 失敗のたびにバナーを更新する（処理完了を待たず、1ページ目の失敗時点で気づけるように）
+        setFailedPageNumbers([...failedPages])
+
+        // 同じエラーが連続したら、残りページは処理せず中断する
+        if (consecutiveFailures >= CONSECUTIVE_FAILURE_LIMIT) {
+          setStoppedEarly(true)
+          for (let j = i + 1; j < processedImages.length; j++) {
+            const skipped = processedImages[j]
+            failedPages.push(j + 1)
+            sessionResultsAccum.push({
+              id: `${runId}-${j}`,
+              fileName: skipped.pageIndex ? `${skipped.fileName} (p.${skipped.pageIndex})` : skipped.fileName,
+              imageDataUrl: getFullUrl(j, skipped),
+              textBlocks: [],
+              fullText: '',
+              processingTimeMs: 0,
+              createdAt: runCreatedAt,
+              error: true,
+              errorMessage: '（連続失敗のため中断）',
+            })
+          }
+          setSessionResults([...sessionResultsAccum])
+          setFailedPageNumbers([...failedPages])
+          break
+        }
       }
 
       // 成功ページが1つでもあれば履歴に保存。ページ順・ページ数を保つため、
@@ -351,6 +386,7 @@ export default function App() {
     setIsProcessing(false)
     setIsReadyToProcess(false)
     setFailedPageNumbers([])
+    setStoppedEarly(false)
     setPendingImageIndex(0)
     setCurrentRunId(null)
     savedImagesRunRef.current = null
@@ -418,6 +454,7 @@ export default function App() {
     setSelectedPageBlock(null)
     setCurrentRunId(null) // 履歴表示中はドラフト自動保存しない
     setFailedPageNumbers([])
+    setStoppedEarly(false)
     setShowHistory(false)
   }
 
@@ -704,19 +741,22 @@ export default function App() {
                 </div>
               )}
 
-              {/* 認識失敗ページの通知（失敗ページは画像のみで書き出される） */}
-              {!isProcessing && failedPageNumbers.length > 0 && (
+              {/* 認識失敗ページの通知（失敗ページは画像のみで書き出される）。
+                  処理完了を待たず、失敗が出た時点で表示する（iPad等での初期化失敗に素早く気づけるように） */}
+              {failedPageNumbers.length > 0 && (
                 <div className="draft-banner ocr-fail-banner">
                   <span className="draft-banner-text">
                     {lang === 'ja'
-                      ? `${failedPageNumbers.join('、')}ページ目の認識に失敗しました。該当ページは画像のみで書き出されます。`
-                      : `Recognition failed for page(s) ${failedPageNumbers.join(', ')}. Those pages are exported as image-only.`}
+                      ? `${failedPageNumbers.join('、')}ページ目の認識に失敗しました。該当ページは画像のみで書き出されます。${stoppedEarly ? '同じエラーが続いたため処理を中断しました。' : ''}`
+                      : `Recognition failed for page(s) ${failedPageNumbers.join(', ')}. Those pages are exported as image-only.${stoppedEarly ? ' Processing was stopped after repeated failures.' : ''}`}
                   </span>
-                  <div className="draft-banner-actions">
-                    <button className="btn btn-secondary" onClick={() => setFailedPageNumbers([])}>
-                      {lang === 'ja' ? '閉じる' : 'Dismiss'}
-                    </button>
-                  </div>
+                  {!isProcessing && (
+                    <div className="draft-banner-actions">
+                      <button className="btn btn-secondary" onClick={() => setFailedPageNumbers([])}>
+                        {lang === 'ja' ? '閉じる' : 'Dismiss'}
+                      </button>
+                    </div>
+                  )}
                   {/* 診断用：最初に失敗した1件のエラー詳細（スクショに写らないため画面下に出す） */}
                   {firstFailedErrorMessage && (
                     <div className="result-error-detail">{firstFailedErrorMessage}</div>
@@ -777,6 +817,11 @@ export default function App() {
                   →
                 </button>
               </div>
+
+              {/* 選択中ページが失敗ページの場合、スクロールしなくても見える位置にエラー詳細を出す */}
+              {currentResult?.error && currentResult.errorMessage && (
+                <div className="result-error-detail">{currentResult.errorMessage}</div>
+              )}
 
               <div
                 className="result-main resizable"

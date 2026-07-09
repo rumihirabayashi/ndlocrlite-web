@@ -22,11 +22,7 @@ export default defineConfig({
     format: 'es',
   },
 
-  server: {
-    // SharedArrayBuffer用のCOOP/COEPヘッダー（onnxruntime-webのマルチスレッド推論に必要）
-    headers: {
-      'Cross-Origin-Opener-Policy': 'same-origin',
-      'Cross-Origin-Embedder-Policy': 'require-corp',
-    },
-  },
+  // COOP/COEPヘッダーは付けない：numThreads=1でSharedArrayBuffer不使用のため不要。
+  // クロスオリジン分離が有効だとONNXランタイムが共有WASMメモリを使い、
+  // 旧iOS WebKit（iPadOS 17.3以前等）の共有メモリ成長バグで推論時に失敗する（本番と挙動を揃える）
 })

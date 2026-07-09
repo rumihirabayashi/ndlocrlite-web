@@ -1,6 +1,7 @@
+# COOP/COEPは付けない：numThreads=1でSharedArrayBuffer不使用のため不要。
+# むしろクロスオリジン分離が有効だとONNXランタイムが共有WASMメモリを使い、
+# 旧iOS WebKit（iPadOS 17.3以前等）の共有メモリ成長バグで推論時に失敗する
 /*
-  Cross-Origin-Opener-Policy: same-origin
-  Cross-Origin-Embedder-Policy: require-corp
   X-Robots-Tag: noindex, nofollow
 
 # AIモデル（ファイル名固定）。更新時はファイル名を変えること
