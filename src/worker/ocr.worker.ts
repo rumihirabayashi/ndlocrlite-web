@@ -15,6 +15,7 @@
  */
 
 import './onnx-config'
+import { clampWasmMemoryForMobile } from './onnx-config'
 import { loadModel, clearModelCache } from './model-loader'
 import { LayoutDetector } from './layout-detector'
 import { TextRecognizer } from './text-recognizer'
@@ -40,6 +41,20 @@ function withTimeout<T>(promise: Promise<T>, ms: number, timeoutMessage: string)
   })
 }
 
+/**
+ * OOM系エラー（iOS 17のWASMメモリ予約リークが原因のことが多い）に対し、
+ * 復旧手順の案内をメッセージ先頭に付加する。再読み込みでは解消せず、
+ * タブを閉じて開き直す必要があるのが特徴（onnxruntime-web 1.19以降のpthreadビルドが
+ * 確保する共有メモリをiOS 17のWebKitが解放し損ねるバグ。iOS 18で修正済み）。
+ * 該当しないメッセージはそのまま返す。
+ */
+function withRecoveryHint(message: string): string {
+  if (/out of memory|no available backend/i.test(message)) {
+    return 'メモリの確保に失敗しました。お使いのOSのSafariの既知の問題です。【対処】このタブを閉じて、新しいタブで開き直してください（再読み込みでは改善しません）。iPadOS/iOS 18以降に更新すると根本的に解消します。\n詳細: ' + message
+  }
+  return message
+}
+
 class OCRWorker {
   private layoutDetector: LayoutDetector | null = null
   private recognizer30: TextRecognizer | null = null  // ≤30文字 [1,3,16,256]
@@ -58,6 +73,11 @@ class OCRWorker {
     this.layoutOnly = layoutOnly
 
     try {
+      // モバイル（iPad/iPhone/Android）ではWASMメモリ確保上限をクランプする。
+      // layoutOnly はモバイル判定済みフラグとしてメインスレッドから渡される
+      // （WorkerのUAではiPadを判別できないため、メインスレッドの判定をここで流用する設計）。
+      if (layoutOnly) clampWasmMemoryForMobile()
+
       // モデルダウンロード前にWASM SIMD対応を確認（非対応環境ではこの先ハング/失敗するため先に検出する）
       if (!isWasmSimdSupported()) {
         throw new Error('この端末のブラウザはWebAssembly SIMDに対応していません。iPadOS/iOSを16.4以降に更新してください。(WebAssembly SIMD not supported)')
@@ -149,7 +169,7 @@ class OCRWorker {
       const diagnosticMessage = `${err.message} [${err.name}] / UA: ${navigator.userAgent}（モデルキャッシュを破棄しました。ページを再読み込みすると再ダウンロードされます）`
       this.post({
         type: 'OCR_ERROR',
-        error: diagnosticMessage,
+        error: withRecoveryHint(diagnosticMessage),
         stage: 'initialization',
       })
       throw error
@@ -312,7 +332,7 @@ class OCRWorker {
       this.post({
         type: 'OCR_ERROR',
         id,
-        error: `${err.message} [${err.name}] / UA: ${navigator.userAgent}`,
+        error: withRecoveryHint(`${err.message} [${err.name}] / UA: ${navigator.userAgent}`),
       })
     }
   }
