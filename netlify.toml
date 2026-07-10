@@ -4,11 +4,6 @@
 
 # COOP/COEPは付けない（numThreads=1でSharedArrayBuffer不使用。
 # クロスオリジン分離が有効だと旧iOS WebKitの共有メモリ成長バグで推論に失敗する）
-[[headers]]
-  for = "/*"
-  [headers.values]
-    # 検索エンジンに載せない（URLを知る人だけがアクセスする非公開運用）
-    X-Robots-Tag = "noindex, nofollow"
 
 # SPAフォールバック
 [[redirects]]
