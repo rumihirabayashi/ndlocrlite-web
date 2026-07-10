@@ -52,7 +52,7 @@ export function Footer({ lang }: FooterProps) {
                 </a>
                 {' '}特任助教）
               </p>
-              <p className="lens-credit-date">公開日：2026/06/28</p>
+              <p className="lens-credit-date">公開日：2026/06/28（build {__BUILD_ID__}）</p>
             </>
           ) : (
             <>

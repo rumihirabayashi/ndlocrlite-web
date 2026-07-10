@@ -202,7 +202,7 @@ class OCRWorker {
       clearModelCache().catch(() => {})
       // スクリーンショットだけで原因特定できるよう、エラー名とUAを1行付加する
       const err = error as Error
-      const diagnosticMessage = `${err.message} [${err.name}] / UA: ${navigator.userAgent}（モデルキャッシュを破棄しました。ページを再読み込みすると再ダウンロードされます）`
+      const diagnosticMessage = `${err.message} [${err.name}] / UA: ${navigator.userAgent} / build: ${__BUILD_ID__}（モデルキャッシュを破棄しました。ページを再読み込みすると再ダウンロードされます）`
       this.post({
         type: 'OCR_ERROR',
         error: withRecoveryHint(diagnosticMessage),
@@ -381,7 +381,7 @@ class OCRWorker {
       this.post({
         type: 'OCR_ERROR',
         id,
-        error: withRecoveryHint(`${err.message} [${err.name}] / UA: ${navigator.userAgent}`),
+        error: withRecoveryHint(`${err.message} [${err.name}] / UA: ${navigator.userAgent} / build: ${__BUILD_ID__}`),
       })
     }
   }
