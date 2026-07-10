@@ -9,6 +9,13 @@ import {
 } from './Icons'
 import { Footer } from './layout/Footer'
 
+// iPad/iPhone判定（iPadOS 13+のSafariはUAが「Macintosh」を名乗るためタッチ点数で判別）。
+// iOS 17以前のWebKitはWASMメモリ予約のバグがあり（iOS 18で修正済み）、
+// 該当端末にだけ使い方の注意書きを表示する
+const isIOS =
+  /iPhone|iPad/.test(navigator.userAgent) ||
+  (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1)
+
 interface WelcomeScreenProps {
   lang: Language
   onFilesSelected: (files: File[]) => void
@@ -177,6 +184,15 @@ export function WelcomeScreen({
             <div className="lens-step-label">{ja ? 'かきだす' : 'Export'}</div>
           </div>
         </div>
+
+        {/* iPad/iPhone利用者向けの注意書き（iOS 17以前のWebKitバグへの案内。該当端末にのみ表示） */}
+        {isIOS && (
+          <p className="lens-ios-note">
+            {ja
+              ? 'iPad・iPhoneでお使いの場合：iPadOS/iOS 18以降を推奨します。動作が不安定なときは、このタブを閉じて新しいタブで開き直してください（再読み込みでは改善しません）。'
+              : 'On iPad / iPhone: iPadOS/iOS 18 or later is recommended. If the app becomes unstable, close this tab and reopen the page in a new tab (reloading does not help).'}
+          </p>
+        )}
       </div>
 
       <Footer lang={lang} />
