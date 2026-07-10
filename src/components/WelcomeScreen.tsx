@@ -189,8 +189,8 @@ export function WelcomeScreen({
         {isIOS && (
           <p className="lens-ios-note">
             {ja
-              ? 'iPad・iPhoneでお使いの場合：iPadOS/iOS 18以降を推奨します。動作が不安定なときは、このタブを閉じて新しいタブで開き直してください（再読み込みでは改善しません）。'
-              : 'On iPad / iPhone: iPadOS/iOS 18 or later is recommended. If the app becomes unstable, close this tab and reopen the page in a new tab (reloading does not help).'}
+              ? 'iPad・iPhoneでお使いの場合：iPadOS/iOS 18以降を推奨します。iPadOS/iOS 17でも動きますが、動作が不安定なときは、このタブを閉じて新しいタブで開き直してください（再読み込みでは改善しません）。'
+              : 'On iPad / iPhone: iPadOS/iOS 18 or later is recommended. It also works on iPadOS/iOS 17, but if the app becomes unstable, close this tab and reopen the page in a new tab (reloading does not help).'}
           </p>
         )}
       </div>
