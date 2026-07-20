@@ -11,7 +11,20 @@ import RecognitionWorkerFactory from '../worker/recognition.worker.ts?worker'
 const isMobile =
   /iPhone|iPad|Android/i.test(navigator.userAgent) ||
   (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1)
-const N_REC_WORKERS = isMobile ? 0 : Math.min(Math.max(navigator.hardwareConcurrency ?? 4, 2), 8)
+
+// deviceMemory はChrome系のみ提供（0.25/0.5/1/2/4/8 の離散値。4GB機は 4 を返す）
+const deviceMemoryGB = (navigator as Navigator & { deviceMemory?: number }).deviceMemory
+// 4GB Chromebook（GIGA端末）はデスクトップUAだが、フルモード（認識ワーカー8本×モデル3本＋
+// メインOCR4モデル＝計28 ONNXセッション）を確保しきれずメモリ枯渇でフリーズする。
+// deviceMemory<=4 を低メモリ端末とみなし、軽量モード（layoutOnly + singleModel + 認識ワーカー0本）へ流す。
+const isLowMemory = deviceMemoryGB !== undefined && deviceMemoryGB <= 4
+
+// ?lite=1 で軽量モード強制ON、?lite=0 で強制OFF（問い合わせ対応時の切り分け用スイッチ）。
+// それ以外は自動判定（モバイル or 低メモリ端末なら軽量モード）。
+const liteParam = new URLSearchParams(location.search).get('lite')
+const isLite = liteParam === '1' ? true : liteParam === '0' ? false : (isMobile || isLowMemory)
+
+const N_REC_WORKERS = isLite ? 0 : Math.min(Math.max(navigator.hardwareConcurrency ?? 4, 2), 8)
 const readingOrderProcessor = new ReadingOrderProcessor()
 
 const initialJobState: OCRJobState = {
@@ -32,6 +45,8 @@ export function useOCRWorker() {
 
   // OCR Worker + 認識 Worker を起動
   useEffect(() => {
+    // スクリーンショットだけでモード特定できるよう、判定結果を1回だけ出力する
+    console.log('[PitattoLens] mode:', isLite ? 'lite' : 'full', '| deviceMemory:', deviceMemoryGB, '| cores:', navigator.hardwareConcurrency, '| recWorkers:', N_REC_WORKERS)
     const worker = new Worker(
       new URL('../worker/ocr.worker.ts', import.meta.url),
       { type: 'module' }
@@ -54,7 +69,7 @@ export function useOCRWorker() {
     }
 
     // OCR Worker 初期化
-    worker.postMessage({ type: 'INITIALIZE', layoutOnly: isMobile } satisfies WorkerInMessage)
+    worker.postMessage({ type: 'INITIALIZE', layoutOnly: isLite } satisfies WorkerInMessage)
 
     worker.onmessage = (event: MessageEvent<WorkerOutMessage>) => {
       const msg = event.data
@@ -88,7 +103,7 @@ export function useOCRWorker() {
         }
         // REC_PROGRESS は初期化進捗として無視（OCR Worker のモデル進捗を主表示に使用）
       }
-      w.postMessage({ type: 'REC_INIT', singleModel: isMobile } satisfies RecWorkerInMessage)
+      w.postMessage({ type: 'REC_INIT', singleModel: isLite } satisfies RecWorkerInMessage)
     })
 
     return () => {

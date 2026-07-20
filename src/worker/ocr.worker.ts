@@ -97,9 +97,9 @@ class OCRWorker {
     this.layoutOnly = layoutOnly
 
     try {
-      // モバイル（iPad/iPhone/Android）ではWASMメモリ確保上限をクランプする。
-      // layoutOnly はモバイル判定済みフラグとしてメインスレッドから渡される
-      // （WorkerのUAではiPadを判別できないため、メインスレッドの判定をここで流用する設計）。
+      // 軽量モード（モバイル、または4GB Chromebook等の低メモリ端末）ではWASMメモリ確保上限をクランプする。
+      // layoutOnly はメインスレッドで判定済みの「軽量モードフラグ」として渡される
+      // （WorkerのUAではiPadや低メモリ端末を判別できないため、メインスレッドの判定をここで流用する設計）。
       if (layoutOnly) clampWasmMemoryForMobile()
 
       // モデルダウンロード前にWASM SIMD対応を確認（非対応環境ではこの先ハング/失敗するため先に検出する）
@@ -202,7 +202,7 @@ class OCRWorker {
       clearModelCache().catch(() => {})
       // スクリーンショットだけで原因特定できるよう、エラー名とUAを1行付加する
       const err = error as Error
-      const diagnosticMessage = `${err.message} [${err.name}] / UA: ${navigator.userAgent} / build: ${__BUILD_ID__}（モデルキャッシュを破棄しました。ページを再読み込みすると再ダウンロードされます）`
+      const diagnosticMessage = `${err.message} [${err.name}] / UA: ${navigator.userAgent} / build: ${__BUILD_ID__} / mode: ${this.layoutOnly ? 'lite' : 'full'}（モデルキャッシュを破棄しました。ページを再読み込みすると再ダウンロードされます）`
       this.post({
         type: 'OCR_ERROR',
         error: withRecoveryHint(diagnosticMessage),
@@ -381,7 +381,7 @@ class OCRWorker {
       this.post({
         type: 'OCR_ERROR',
         id,
-        error: withRecoveryHint(`${err.message} [${err.name}] / UA: ${navigator.userAgent} / build: ${__BUILD_ID__}`),
+        error: withRecoveryHint(`${err.message} [${err.name}] / UA: ${navigator.userAgent} / build: ${__BUILD_ID__} / mode: ${this.layoutOnly ? 'lite' : 'full'}`),
       })
     }
   }
