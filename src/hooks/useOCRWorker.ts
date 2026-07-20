@@ -3,6 +3,7 @@ import type { OCRJobState, OCRResult, ProcessedImage, TextBlock, TextRegion, Pag
 import type { WorkerInMessage, WorkerOutMessage } from '../types/worker'
 import type { RecWorkerInMessage, RecWorkerOutMessage } from '../types/recognition-worker'
 import { imageDataToDataUrl } from '../utils/imageLoader'
+import { ensureBlockUids } from '../utils/blockUid'
 import { ReadingOrderProcessor, extractFolio, type Orientation } from '../worker/reading-order'
 // ?worker import → Vite が recognition.worker.ts を独立バンドルして Worker コンストラクタを返す
 import RecognitionWorkerFactory from '../worker/recognition.worker.ts?worker'
@@ -163,7 +164,8 @@ export function useOCRWorker() {
             workerRef.current?.removeEventListener('message', handler)
             const fileName = image.pageIndex ? `${image.fileName} (p.${image.pageIndex})` : image.fileName
             setJobState((prev) => ({ ...prev, status: 'done', stageProgress: 1 }))
-            resolve({
+            // アプリ境界①（モバイル経路）：resolve 直前に uid を付与する
+            resolve(ensureBlockUids({
               id,
               fileName,
               imageDataUrl,
@@ -172,7 +174,7 @@ export function useOCRWorker() {
               processingTimeMs: msg.processingTime,
               createdAt: Date.now(),
               folio: msg.folio,
-            })
+            }))
           } else if (msg.type === 'LAYOUT_DONE') {
             workerRef.current?.removeEventListener('message', handler)
             runRecognition(id, imageDataUrl, image, msg.textRegions, msg.croppedImages, msg.pageBlocks, msg.startTime, orientation, resolve, reject)
@@ -311,7 +313,8 @@ export function useOCRWorker() {
         }
 
         setJobState((prev) => ({ ...prev, status: 'done', stageProgress: 1 }))
-        resolve(result)
+        // アプリ境界①（デスクトップ経路）：resolve 直前に uid を付与する
+        resolve(ensureBlockUids(result))
       })
       .catch((err: Error) => {
         setJobState((prev) => ({

@@ -81,6 +81,55 @@
 .line-warn-mark { flex-shrink: 0; align-self: center; font-size: 0.95rem; cursor: help; }
 .line-row.line-warn .line-edit { border-color: #f0a500; background: #fff9ef; }
 
+/* 複数行選択＋ドラッグ並べ替え（⠿ハンドル） */
+.line-check {
+  flex-shrink: 0; align-self: center; width: 18px; height: 18px;
+  margin: 0; cursor: pointer; accent-color: #2e7d32;
+}
+.line-drag-handle {
+  flex-shrink: 0; align-self: stretch;
+  display: flex; align-items: center; justify-content: center;
+  min-width: 30px; min-height: 44px; padding: 0 4px;
+  border: 1px solid #cfcfcf; border-radius: 4px; background: #f7f7f7;
+  color: #7a7a7a; font-size: 16px; line-height: 1;
+  cursor: grab; touch-action: none; user-select: none;
+}
+.line-drag-handle:hover { background: #e6f4ea; border-color: #2e7d32; color: #2e7d32; }
+.line-drag-handle:active { cursor: grabbing; }
+.line-drag-handle:focus-visible { outline: 2px solid #2e7d32; outline-offset: 1px; }
+/* 選択行のハイライト（改変版=緑系） */
+.line-row.line-selected { background: #eaf5ec; border-radius: 5px; }
+.line-row.line-selected .line-edit { border-color: #2e7d32; }
+
+/* 選択中の操作ツールバー */
+.line-select-toolbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  background: #eaf5ec; border: 1px solid #2e7d32; border-radius: 6px;
+  padding: 6px 10px; margin-bottom: 8px; font-size: 0.85rem; color: #245c29;
+}
+.line-select-clear {
+  flex-shrink: 0; border: 1px solid #2e7d32; border-radius: 4px; background: #fff;
+  color: #2e7d32; font-size: 0.8rem; padding: 3px 10px; cursor: pointer;
+}
+.line-select-clear:hover { background: #2e7d32; color: #fff; }
+
+/* 読み順変更の「元に戻す」ボタン（常設・緑系。Ctrl+Zと同じ動作） */
+.reorder-undo-bar { display: flex; justify-content: flex-end; margin-bottom: 8px; }
+.reorder-undo-btn {
+  min-height: 36px; padding: 6px 16px;
+  border: 1px solid #2e7d32; border-radius: 6px; background: #fff;
+  color: #2e7d32; font-size: 0.85rem; cursor: pointer;
+}
+.reorder-undo-btn:hover:not(:disabled) { background: #2e7d32; color: #fff; }
+.reorder-undo-btn:disabled { opacity: 0.4; cursor: default; border-color: #cfcfcf; color: #888; }
+
+/* ドラッグ中に浮かぶ「N行を移動中」チップ */
+.line-drag-chip {
+  display: inline-block; background: #2e7d32; color: #fff;
+  font-size: 0.85rem; font-weight: 600; padding: 6px 12px; border-radius: 6px;
+  box-shadow: 0 3px 10px rgba(0,0,0,0.25); cursor: grabbing; white-space: nowrap;
+}
+
 /* 認識前のコントロール（組み方向＋認識開始） */
 .pre-ocr-controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 0.5rem; }
 .pre-ocr-controls .btn-above-viewer { width: auto; margin-bottom: 0; flex: 1; min-width: 160px; }

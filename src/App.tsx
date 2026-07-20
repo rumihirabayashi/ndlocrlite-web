@@ -17,6 +17,7 @@ import { SettingsModal } from './components/settings/SettingsModal'
 import { imageDataToDataUrl } from './utils/imageLoader'
 import { countPageWarnings } from './utils/lineWarnings'
 import { getDraft, saveDraftText, saveDraftImages, clearDraft } from './utils/db'
+import { ensureBlockUids } from './utils/blockUid'
 import type { ProcessedImage } from './types/ocr'
 import type { Orientation } from './utils/exporters/pdfExport'
 import './App.css'
@@ -36,6 +37,43 @@ function dataUrlToImageData(dataUrl: string): Promise<ImageData> {
     img.onerror = reject
     img.src = dataUrl
   })
+}
+
+/**
+ * 渡された uid 順に readingOrder を 1..n で振り直し、fullText を再構成する。
+ * ↑↓移動・ドラッグ並べ替えの両方から共用する。
+ * orderedUids に含まれない行（想定外）は元の readingOrder を残し、末尾に回す。
+ */
+function applyReadingOrder(
+  blocks: TextBlock[],
+  orderedUids: string[]
+): { textBlocks: TextBlock[]; fullText: string } {
+  const orderMap = new Map(orderedUids.map((uid, i) => [uid, i + 1]))
+  const textBlocks = blocks.map((b) => {
+    const next = b.uid ? orderMap.get(b.uid) : undefined
+    return next !== undefined ? { ...b, readingOrder: next } : b
+  })
+  const fullText = [...textBlocks]
+    .sort((a, b) => a.readingOrder - b.readingOrder)
+    .filter((b) => b.text)
+    .map((b) => b.text)
+    .join('\n')
+  return { textBlocks, fullText }
+}
+
+/** 読み順Undo履歴：1ページあたりのスナップショット上限 */
+const REORDER_UNDO_LIMIT = 50
+
+/** uid配列が完全一致（長さ＋全要素）かどうか */
+function sameUidOrder(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((u, i) => u === b[i])
+}
+
+/** readingOrder 昇順の uid 配列（Undoスナップショット用） */
+function currentUidOrder(blocks: TextBlock[]): string[] {
+  return [...blocks]
+    .sort((a, b) => a.readingOrder - b.readingOrder)
+    .map((b) => b.uid as string)
 }
 
 
@@ -88,6 +126,29 @@ export default function App() {
     window.addEventListener('mouseup', onUp)
     document.body.style.cursor = 'col-resize'
     document.body.style.userSelect = 'none'
+  }, [])
+
+  // 読み順変更のUndo履歴（ページ＝OCRResult.idごとに独立したスタック。
+  // 各要素は「変更前の readingOrder 昇順 uid 配列」のスナップショット）
+  const reorderUndoStacksRef = useRef<Map<string, string[][]>>(new Map())
+  // refの増減だけでは再レンダリングされないため、履歴が変わるたびにカウンタを進めて
+  // canUndoReorder（ボタンの活性状態）を再計算させる
+  const [, bumpUndoTick] = useState(0)
+
+  /**
+   * 並べ替え適用「直前」の順序をスタックにpushする。
+   * setSessionResults の更新関数内から呼ばれるため、React StrictMode（開発時）の
+   * 二重呼び出し対策として「スタック先頭が今回のスナップショットと同一ならpushしない」
+   * ガードで冪等にしてある。
+   */
+  const pushReorderSnapshot = useCallback((resultId: string, snapshot: string[]) => {
+    const map = reorderUndoStacksRef.current
+    const stack = map.get(resultId) ?? []
+    const top = stack[stack.length - 1]
+    if (top && sameUidOrder(top, snapshot)) return // StrictModeの二重push防止
+    stack.push(snapshot)
+    if (stack.length > REORDER_UNDO_LIMIT) stack.shift() // 古い方から捨てる
+    map.set(resultId, stack)
   }, [])
 
   // 一時保存（校正中の作業の自動保存・復元）
@@ -170,7 +231,8 @@ export default function App() {
       const src = f.imageFullDataUrl ?? f.imageDataUrl
       const imageData = await dataUrlToImageData(src)
       imgs.push({ fileName: f.fileName, pageIndex: f.pageIndex, imageData, thumbnailDataUrl: f.imageDataUrl })
-      results.push({
+      // アプリ境界②：IndexedDB（ドラフト）復元直後に uid を保証する（uid無しの旧データにも付与）
+      results.push(ensureBlockUids({
         id: `${d.id}-${i}`,
         fileName: f.fileName,
         imageDataUrl: f.imageDataUrl,
@@ -178,10 +240,11 @@ export default function App() {
         fullText: f.fullText,
         processingTimeMs: f.processingTimeMs,
         createdAt: d.createdAt,
-      })
+      }))
     }
     restoreImages(imgs)
     setSessionResults(results)
+    reorderUndoStacksRef.current.clear() // 古いresult.idのUndo履歴を破棄
     setSelectedResultIndex(0)
     setFailedPageNumbers([])
     setStoppedEarly(false)
@@ -282,6 +345,7 @@ export default function App() {
     const runOCR = async () => {
       setIsProcessing(true)
       setSessionResults([])
+      reorderUndoStacksRef.current.clear() // 古いresult.idのUndo履歴を破棄
       setSelectedResultIndex(0)
       setFailedPageNumbers([])
       setStoppedEarly(false)
@@ -379,6 +443,7 @@ export default function App() {
   const handleClear = () => {
     clearImages()
     setSessionResults([])
+    reorderUndoStacksRef.current.clear()
     setSelectedResultIndex(0)
     setSelectedBlock(null)
     setSelectedPageBlock(null)
@@ -401,44 +466,94 @@ export default function App() {
     setSessionResults(prev => prev.map((r, i) => {
       if (i !== selectedResultIndex) return r
       const textBlocks = r.textBlocks.map(b =>
-        b.readingOrder === target.readingOrder ? { ...b, text: newText } : b
-      )
-      const fullText = textBlocks.filter(b => b.text).map(b => b.text).join('\n')
-      return { ...r, textBlocks, fullText }
-    }))
-    setSelectedBlock(prev =>
-      prev && prev.readingOrder === target.readingOrder ? { ...prev, text: newText } : prev
-    )
-  }, [selectedResultIndex])
-
-  // 認識行の読み順を入れ替え（↑↓）。隣の行と readingOrder を交換し、fullText を再構成。
-  // textBlocks を更新するので PDF・ePub・Word・コピーすべてに反映される。
-  const handleMoveBlock = useCallback((target: TextBlock, dir: 'up' | 'down') => {
-    setSessionResults(prev => prev.map((r, i) => {
-      if (i !== selectedResultIndex) return r
-      const sorted = [...r.textBlocks].sort((a, b) => a.readingOrder - b.readingOrder)
-      const idx = sorted.findIndex(b => b.readingOrder === target.readingOrder)
-      const swapIdx = dir === 'up' ? idx - 1 : idx + 1
-      if (idx < 0 || swapIdx < 0 || swapIdx >= sorted.length) return r
-      const aOrder = sorted[idx].readingOrder
-      const bOrder = sorted[swapIdx].readingOrder
-      const textBlocks = r.textBlocks.map(blk =>
-        blk.readingOrder === aOrder ? { ...blk, readingOrder: bOrder }
-          : blk.readingOrder === bOrder ? { ...blk, readingOrder: aOrder }
-          : blk
+        b.uid === target.uid ? { ...b, text: newText } : b
       )
       const fullText = [...textBlocks].sort((x, y) => x.readingOrder - y.readingOrder)
         .filter(b => b.text).map(b => b.text).join('\n')
       return { ...r, textBlocks, fullText }
     }))
+    setSelectedBlock(prev =>
+      prev && prev.uid === target.uid ? { ...prev, text: newText } : prev
+    )
   }, [selectedResultIndex])
+
+  // 読み順の並べ替え（ドラッグ・複数行まとめ移動）。渡された uid 順に readingOrder を 1..n で
+  // 振り直し、fullText を再構成する。textBlocks を更新するので PDF・ePub・Word・コピーすべてに反映される。
+  const handleReorderBlocks = useCallback((orderedUids: string[]) => {
+    setSessionResults(prev => prev.map((r, i) => {
+      if (i !== selectedResultIndex) return r
+      const before = currentUidOrder(r.textBlocks)
+      if (sameUidOrder(before, orderedUids)) return r // 順序が変わらない呼び出しはpushも適用もしない
+      pushReorderSnapshot(r.id, before) // Undo用に変更前の順序を保存
+      const { textBlocks, fullText } = applyReadingOrder(r.textBlocks, orderedUids)
+      return { ...r, textBlocks, fullText }
+    }))
+    bumpUndoTick(t => t + 1)
+  }, [selectedResultIndex, pushReorderSnapshot])
+
+  // 認識行の読み順を1つ入れ替え（↑↓・単一行）。読み順配列を作り、隣と入れ替えて振り直す。
+  const handleMoveBlock = useCallback((target: TextBlock, dir: 'up' | 'down') => {
+    setSessionResults(prev => prev.map((r, i) => {
+      if (i !== selectedResultIndex) return r
+      const sorted = [...r.textBlocks].sort((a, b) => a.readingOrder - b.readingOrder)
+      const idx = sorted.findIndex(b => b.uid === target.uid)
+      const swapIdx = dir === 'up' ? idx - 1 : idx + 1
+      if (idx < 0 || swapIdx < 0 || swapIdx >= sorted.length) return r
+      const before = sorted.map(b => b.uid!) // 変更前の順序（Undoスナップショット）
+      const orderedUids = [...before]
+      ;[orderedUids[idx], orderedUids[swapIdx]] = [orderedUids[swapIdx], orderedUids[idx]]
+      pushReorderSnapshot(r.id, before)
+      const { textBlocks, fullText } = applyReadingOrder(r.textBlocks, orderedUids)
+      return { ...r, textBlocks, fullText }
+    }))
+    bumpUndoTick(t => t + 1)
+  }, [selectedResultIndex, pushReorderSnapshot])
+
+  // 読み順変更のUndo：現在ページのスタックから1つ戻す（テキスト内容の編集は対象外）
+  const handleUndoReorder = useCallback(() => {
+    const result = sessionResults[selectedResultIndex]
+    if (!result) return
+    const stack = reorderUndoStacksRef.current.get(result.id)
+    if (!stack || stack.length === 0) return
+    // pop はイベントハンドラ内（更新関数の外）なので StrictMode でも1回だけ実行される
+    const snapshot = stack.pop()!
+    setSessionResults(prev => prev.map((r, i) => {
+      if (i !== selectedResultIndex) return r
+      const { textBlocks, fullText } = applyReadingOrder(r.textBlocks, snapshot)
+      return { ...r, textBlocks, fullText } // Undo適用時はpushしない
+    }))
+    bumpUndoTick(t => t + 1)
+  }, [sessionResults, selectedResultIndex])
+
+  // 現在ページにUndoできる履歴があるか（bumpUndoTickによる再レンダリングで同期する）
+  const canUndoReorder =
+    !!currentResult &&
+    (reorderUndoStacksRef.current.get(currentResult.id)?.length ?? 0) > 0
+
+  // Ctrl+Z / Cmd+Z で読み順Undo（編集可能な結果が表示されている間のみ）。
+  // テキスト欄（textarea/input/contenteditable）内やIME変換中は既定動作
+  // （テキスト欄のネイティブUndo）に譲る。Redoは対象外。
+  useEffect(() => {
+    if (!currentResult || currentResult.error) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.key.toLowerCase() !== 'z') return
+      if (e.isComposing) return
+      const el = e.target instanceof Element ? e.target : null
+      if (el && el.closest('textarea, input, [contenteditable]')) return
+      e.preventDefault()
+      handleUndoReorder()
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [currentResult, handleUndoReorder])
 
   // 履歴の run には縮小サムネイル（imageDataUrl）しか保存されておらず、
   // フル解像度画像は無い（DBRunFile.imageFullDataUrl はドラフト専用）。
   // そのため processedImages は復元せずクリアし、テキストのみの表示に切り替える。
   // これにより「現在の画像 × 過去のテキスト」の混在を防ぎ、PDF書き出しは無効化する。
   const handleHistorySelect = (run: DBRunEntry) => {
-    const restoredResults: OCRResult[] = run.files.map((file, i) => ({
+    // アプリ境界②：IndexedDB（履歴）復元直後に uid を保証する（uid無しの旧データにも付与）
+    const restoredResults: OCRResult[] = run.files.map((file, i) => ensureBlockUids({
       id: `${run.id}-${i}`,
       fileName: file.fileName,
       imageDataUrl: file.imageDataUrl,
@@ -449,6 +564,7 @@ export default function App() {
     }))
     clearImages() // 現在読み込み中の画像を破棄（過去テキストと混ざらないように）
     setSessionResults(restoredResults)
+    reorderUndoStacksRef.current.clear() // 古いresult.idのUndo履歴を破棄
     setSelectedResultIndex(0)
     setSelectedBlock(null)
     setSelectedPageBlock(null)
@@ -863,7 +979,7 @@ export default function App() {
                 />
 
                 <div className="result-right">
-                  <ResultPanel result={currentResult} selectedBlock={selectedBlock} selectedPageBlockText={selectedPageBlockText} onEditBlock={handleEditBlock} onMoveBlock={handleMoveBlock} lang={lang} />
+                  <ResultPanel result={currentResult} selectedBlock={selectedBlock} selectedPageBlockText={selectedPageBlockText} onEditBlock={handleEditBlock} onMoveBlock={handleMoveBlock} onReorderBlocks={handleReorderBlocks} onUndoReorder={handleUndoReorder} canUndoReorder={canUndoReorder} lang={lang} />
                   <ResultActions results={sessionResults} currentResult={currentResult} processedImages={processedImages} orientation={orientation} pdfAvailable={!textOnlyHistory} lang={lang} />
                 </div>
               </div>

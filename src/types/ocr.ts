@@ -14,6 +14,7 @@ export interface TextRegion extends BoundingBox {
 export interface TextBlock extends TextRegion {
   text: string
   readingOrder: number
+  uid?: string // 行の安定ID（読み順の並べ替え・Reactのkey・選択照合に使う）。アプリ境界で付与される
 }
 
 export interface PageBlock {
