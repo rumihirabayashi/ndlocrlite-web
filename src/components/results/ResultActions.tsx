@@ -30,14 +30,32 @@ interface ResultActionsProps {
   lang: 'ja' | 'en'
 }
 
-/** ImageData → PNG バイト列（PDF埋め込み用） */
-async function imageDataToPngBytes(imageData: ImageData): Promise<Uint8Array> {
+/**
+ * ImageData → JPEG バイト列（PDF埋め込み用）。
+ * スキャン画像はPNGよりJPEGの方がメモリ・処理時間・ファイルサイズを大幅削減でき、
+ * モバイル端末（特にAndroid Chrome）でのPDF書き出し失敗（メモリ・CPU負荷起因）対策になる。
+ * ブラウザによってはJPEG非対応でPNGを返す場合があるため、実際に返ってきたBlobのtypeで判定する。
+ */
+async function imageDataToJpegBytes(imageData: ImageData): Promise<{ bytes: Uint8Array; mime: 'image/jpeg' | 'image/png' }> {
   const canvas = document.createElement('canvas')
   canvas.width = imageData.width
   canvas.height = imageData.height
   canvas.getContext('2d')!.putImageData(imageData, 0, 0)
-  const blob: Blob = await new Promise((res) => canvas.toBlob((b) => res(b!), 'image/png'))
-  return new Uint8Array(await blob.arrayBuffer())
+
+  const toBlob = (type: string, quality?: number) =>
+    new Promise<Blob | null>((res) => canvas.toBlob(res, type, quality))
+
+  let blob = await toBlob('image/jpeg', 0.85)
+  if (!blob) {
+    // JPEG生成に失敗した端末向けにPNGへフォールバック
+    blob = await toBlob('image/png')
+  }
+  if (!blob) {
+    throw new Error('canvas.toBlob returned null (画像変換失敗・端末のメモリ不足の可能性)')
+  }
+
+  const mime = blob.type === 'image/jpeg' ? 'image/jpeg' : 'image/png'
+  return { bytes: new Uint8Array(await blob.arrayBuffer()), mime }
 }
 
 export function ResultActions({ results, currentResult, processedImages, orientation, pdfAvailable = true, lang }: ResultActionsProps) {
@@ -92,7 +110,8 @@ export function ResultActions({ results, currentResult, processedImages, orienta
         for (let i = 0; i < n; i++) {
           const img = processedImages[i].imageData
           const blocks = [...results[i].textBlocks].sort((a, b) => a.readingOrder - b.readingOrder)
-          pages.push({ pngBytes: await imageDataToPngBytes(img), width: img.width, height: img.height, blocks })
+          const { bytes: imageBytes, mime: imageMime } = await imageDataToJpegBytes(img)
+          pages.push({ imageBytes, imageMime, width: img.width, height: img.height, blocks })
         }
         const bytes = await buildSearchablePdf(pages, { orientation })
         downloadPdf(bytes, baseName)
@@ -106,7 +125,13 @@ export function ResultActions({ results, currentResult, processedImages, orienta
       }
     } catch (e) {
       console.error('Export failed:', e)
-      alert(lang === 'ja' ? '書き出しに失敗しました' : 'Export failed')
+      // スクリーンショットだけで原因特定できるよう、エラー名とUAを1行付加する（worker側と同様）
+      const err = e as Error
+      const diagnostic = `${err?.message} [${err?.name}] / UA: ${navigator.userAgent} / build: ${__BUILD_ID__}`
+      const hint = lang === 'ja'
+        ? '\n\nこの画面のスクリーンショットを開発ポータルから送ってもらえると原因を特定できます。'
+        : ''
+      alert(`${lang === 'ja' ? '書き出しに失敗しました' : 'Export failed'}\n${diagnostic}${hint}`)
     } finally {
       setExporting(false)
     }

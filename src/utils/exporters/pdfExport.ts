@@ -7,6 +7,9 @@
  *   ・重複した同一文字が統合されて欠ける不具合が起きない
  *   ・PDFKit(Preview/VoiceOver/iOS)が正しい順（右列→左列）で読む
  * - 日本語フォント(Noto Sans JP)をサブセット埋め込みし、検索・コピー・読み上げを可能にする。
+ * - ページ画像はJPEGで埋め込む（PNGに比べメモリ・処理時間・ファイルサイズを大幅削減でき、
+ *   モバイル端末でのPDF書き出し失敗＝メモリ/CPU負荷対策になる）。ブラウザがJPEG生成に非対応で
+ *   PNGを返した場合はPNGとして埋め込む（呼び出し側が imageMime で申告）。
  */
 import { PDFDocument, rgb, degrees } from 'pdf-lib'
 import fontkit from '@pdf-lib/fontkit'
@@ -16,8 +19,10 @@ import notoFontUrl from '../../assets/fonts/NotoSansJP-Regular.otf'
 export type Orientation = 'auto' | 'vertical' | 'horizontal'
 
 export interface ExportPage {
-  /** ページ画像（PNG）のバイト列 */
-  pngBytes: Uint8Array
+  /** ページ画像のバイト列（JPEGまたはPNG。imageMime で判別） */
+  imageBytes: Uint8Array
+  /** imageBytes の実際の形式。JPEG生成に非対応の環境ではPNGが渡ってくる */
+  imageMime: 'image/jpeg' | 'image/png'
   /** 画像の幅・高さ（px）。textBlocks の座標系と一致していること */
   width: number
   height: number
@@ -57,7 +62,9 @@ export async function buildSearchablePdf(
   const invisible = { opacity: 0, color: rgb(0, 0, 0) }
 
   for (const page of pages) {
-    const img = await pdfDoc.embedPng(page.pngBytes)
+    const img = page.imageMime === 'image/jpeg'
+      ? await pdfDoc.embedJpg(page.imageBytes)
+      : await pdfDoc.embedPng(page.imageBytes)
     const W = page.width
     const H = page.height
     const pg = pdfDoc.addPage([W, H])
