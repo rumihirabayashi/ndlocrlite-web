@@ -23,7 +23,7 @@
 .line-edit {
   width: 100%; box-sizing: border-box; font-family: inherit; font-size: 0.98rem;
   line-height: 1.5; padding: 4px 8px; border: 1px solid #d2d2d2; border-radius: 4px;
-  background: #fff; resize: vertical; overflow: hidden;
+  background: #fff; resize: none; overflow: hidden;
 }
 .line-edit:focus { outline: none; border-color: #0b5d8f; background: #fffef8; }
 .line-row.active .line-edit { border-color: #f0a500; background: #fff7e6; }

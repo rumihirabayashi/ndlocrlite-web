@@ -48,6 +48,13 @@ interface SortableLineProps {
   onMove: (block: TextBlock, dir: 'up' | 'down') => void
 }
 
+/** textareaの高さを内容に合わせて自動調整する（定番のautosizeパターン）。 */
+function autosizeTextarea(el: HTMLTextAreaElement | null) {
+  if (!el) return
+  el.style.height = 'auto'
+  el.style.height = `${el.scrollHeight}px`
+}
+
 /** 1行分（チェックボックス＋⠿ハンドル＋⚠️＋textarea＋↑↓）。ドラッグはハンドルからのみ開始する。 */
 function SortableLine({
   block, isActive, checked, dimmed, warnTitle, hasWarn, rows,
@@ -55,6 +62,12 @@ function SortableLine({
 }: SortableLineProps) {
   const uid = block.uid as string
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: uid })
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  // マウント時・テキスト変更のたびに高さを再計測（ソフト折り返しで2行目以降が
+  // 見切れないようにするため。横幅の変化はResultPanel側のResizeObserverが担当する）
+  useEffect(() => {
+    autosizeTextarea(textareaRef.current)
+  }, [block.text])
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -87,6 +100,7 @@ function SortableLine({
         <span className="line-warn-mark" title={warnTitle}>⚠️</span>
       )}
       <textarea
+        ref={textareaRef}
         className="line-edit"
         value={block.text}
         rows={rows}
@@ -140,6 +154,7 @@ export function ResultPanel({ result, selectedBlock, onEditBlock, onMoveBlock, o
   const [selectedUids, setSelectedUids] = useState<Set<string>>(new Set())
   const [activeUid, setActiveUid] = useState<string | null>(null)
   const movingUidsRef = useRef<string[]>([])
+  const editorRef = useRef<HTMLOListElement>(null)
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -148,6 +163,30 @@ export function ResultPanel({ result, selectedBlock, onEditBlock, onMoveBlock, o
 
   // ページが切り替わったら選択をリセット（uidは安定なので同一ページ内の並べ替えでは維持される）
   useEffect(() => { setSelectedUids(new Set()) }, [result?.id])
+
+  // 横幅が変わったら全行のtextareaを再計測する（ウィンドウリサイズ・パネル幅ドラッグの両方）。
+  // パネル幅ドラッグはwindowのresizeイベントを発火しないため、コンテナの実サイズを見る
+  // ResizeObserverを主とし、window resizeも保険で併用する。どちらも100msデバウンス。
+  useEffect(() => {
+    const recalcAll = () => {
+      const container = editorRef.current
+      if (!container) return
+      container.querySelectorAll<HTMLTextAreaElement>('.line-edit').forEach(autosizeTextarea)
+    }
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const scheduleRecalc = () => {
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(recalcAll, 100)
+    }
+    const ro = new ResizeObserver(scheduleRecalc)
+    if (editorRef.current) ro.observe(editorRef.current)
+    window.addEventListener('resize', scheduleRecalc)
+    return () => {
+      ro.disconnect()
+      window.removeEventListener('resize', scheduleRecalc)
+      if (timer) clearTimeout(timer)
+    }
+  }, [result?.id])
 
   if (!result) {
     return (
@@ -320,7 +359,7 @@ export function ResultPanel({ result, selectedBlock, onEditBlock, onMoveBlock, o
               onDragCancel={handleDragCancel}
             >
               <SortableContext items={orderUids} strategy={verticalListSortingStrategy}>
-                <ol className="line-editor">
+                <ol className="line-editor" ref={editorRef}>
                   {lines.map((b, i) => {
                     const uid = b.uid as string
                     const isActive = !!selectedBlock?.uid && selectedBlock.uid === uid
